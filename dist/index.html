@@ -150,7 +150,8 @@
         }
 
         input[type="text"],
-        input[type="number"] {
+        input[type="number"],
+        input[type="password"] {
             width: 100%;
             padding: 0.875rem 1rem;
             background: var(--bg-tertiary);
@@ -162,25 +163,62 @@
         }
 
         input[type="text"]:focus,
-        input[type="number"]:focus {
+        input[type="number"]:focus,
+        input[type="password"]:focus {
             outline: none;
             border-color: var(--accent);
             box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
         }
 
         input[type="text"]::placeholder,
-        input[type="number"]::placeholder {
+        input[type="number"]::placeholder,
+        input[type="password"]::placeholder {
             color: rgba(255, 255, 255, 0.3);
         }
 
         input[type="text"].error,
-        input[type="number"].error {
+        input[type="number"].error,
+        input[type="password"].error {
             border-color: var(--error);
         }
 
         input[type="text"].valid,
-        input[type="number"].valid {
+        input[type="number"].valid,
+        input[type="password"].valid {
             border-color: var(--success);
+        }
+
+        /* File Input Styling */
+        input[type="file"] {
+            background: var(--bg-tertiary);
+            padding: 0.5rem;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            width: 100%;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        input[type="file"]:hover {
+            border-color: rgba(0, 212, 255, 0.3);
+        }
+
+        input[type="file"]::file-selector-button {
+            background: linear-gradient(135deg, var(--accent), #a855f7);
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            color: white;
+            margin-right: 1rem;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        input[type="file"]::file-selector-button:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
         }
 
         .btn {
@@ -449,11 +487,91 @@
                 <div class="feature"><span class="check">✓</span> Edit Version</div>
                 <div class="feature"><span class="check">✓</span> Auto Sign APK</div>
             </div>
+        <div class="card">
+            <h2><span class="icon">🔐</span> Signing Options</h2>
+            
+            <div class="signing-modes" style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
+                <label class="mode-option" style="flex: 1; cursor: pointer;">
+                    <input type="radio" name="signMode" value="debug" checked style="display: none;">
+                    <div class="mode-card" style="border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; text-align: center; transition: all 0.2s;">
+                        <span style="font-size: 1.5rem; display: block; margin-bottom: 0.5rem;">🤖</span>
+                        <div style="font-weight: 600;">Debug Key</div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">Default v2 Sign</div>
+                    </div>
+                </label>
+                
+                <label class="mode-option" style="flex: 1; cursor: pointer;">
+                    <input type="radio" name="signMode" value="p12" style="display: none;">
+                    <div class="mode-card" style="border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; text-align: center; transition: all 0.2s;">
+                        <span style="font-size: 1.5rem; display: block; margin-bottom: 0.5rem;">🔐</span>
+                        <div style="font-weight: 600;">Keystore</div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">.p12 / .pfx</div>
+                    </div>
+                </label>
+                
+                <label class="mode-option" style="flex: 1; cursor: pointer;">
+                    <input type="radio" name="signMode" value="pem" style="display: none;">
+                    <div class="mode-card" style="border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; text-align: center; transition: all 0.2s;">
+                        <span style="font-size: 1.5rem; display: block; margin-bottom: 0.5rem;">📄</span>
+                        <div style="font-weight: 600;">PEM File</div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">No Password</div>
+                    </div>
+                </label>
+            </div>
+            
+            <style>
+                .mode-option input:checked + .mode-card {
+                    border-color: var(--accent);
+                    background: rgba(0, 212, 255, 0.1);
+                    box-shadow: 0 0 15px rgba(0, 212, 255, 0.1);
+                }
+            </style>
+
+            <!-- Custom Keystore (.p12) UI -->
+            <div id="p12Section" class="hidden" style="padding-left: 1rem; border-left: 2px solid var(--accent); animation: fadeIn 0.3s;">
+                <div class="form-group">
+                     <label for="keystoreFile">Keystore File</label>
+                     <input type="file" id="keystoreFile" accept=".p12,.pfx">
+                </div>
+                <div class="form-group">
+                     <label for="keystorePassword">Keystore Password</label>
+                     <input type="password" id="keystorePassword" placeholder="Enter keystore password">
+                     <div id="passwordFeedback" style="font-size: 0.85rem; margin-top: 0.5rem; height: 1.2em; transition: all 0.2s;"></div>
+                </div>
+            </div>
+
+            <!-- PEM File UI -->
+            <div id="pemSection" class="hidden" style="padding-left: 1rem; border-left: 2px solid var(--warning); animation: fadeIn 0.3s;">
+                <div class="form-group">
+                     <label for="pemFile">PEM File</label>
+                     <input type="file" id="pemFile" accept=".pem,.pk8,.key">
+                     <div class="label-hint" style="margin-top: 0.5rem;">File must contain both PRIVATE KEY and CERTIFICATE.</div>
+                </div>
+            </div>
+            
+            <!-- Instructions Toggle -->
+            <div id="helpSection" style="margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
+                <button type="button" id="toggleHelp" style="background: none; border: none; color: var(--accent); cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
+                    <span>ℹ️ How to convert keys?</span>
+                    <span id="helpArrow">▼</span>
+                </button>
+                <div id="helpContent" class="hidden" style="margin-top: 1rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; font-size: 0.85rem;">
+                    <p style="margin-bottom: 0.5rem; font-weight: 600;">Convert JKS to P12 (Standard):</p>
+                    <code style="display: block; background: #000; padding: 0.5rem; border-radius: 4px; overflow-x: auto; font-family: monospace; color: #0f0;">
+                        keytool -importkeystore -srckeystore app.jks -destkeystore app.p12 -deststoretype PKCS12
+                    </code>
+                    
+                    <p style="margin-top: 1rem; margin-bottom: 0.5rem; font-weight: 600;">Convert P12 to PEM (No Password):</p>
+                    <code style="display: block; background: #000; padding: 0.5rem; border-radius: 4px; overflow-x: auto; font-family: monospace; color: #0f0;">
+                        openssl pkcs12 -in app.p12 -nodes -out app.pem
+                    </code>
+                </div>
+            </div>
         </div>
 
         <button id="processBtn" class="btn" disabled>
             <span class="spinner"></span>
-            <span class="btn-text">Edit APK</span>
+            <span class="btn-text">Edit & Sign APK</span>
         </button>
 
         <div id="status" class="status"></div>
@@ -465,7 +583,19 @@
     </footer>
 
     <script type="module">
-        import init, { edit_apk, validate_package_name, get_version, init_panic_hook, get_apk_info, get_apk_icon, list_apk_files, dump_manifest } from './pkg/rsapkeditor.js';
+        import init, { 
+            edit_apk, 
+            edit_apk_with_keystore, 
+            edit_apk_with_pem,
+            verify_keystore_password,
+            validate_package_name, 
+            get_version, 
+            init_panic_hook, 
+            get_apk_info, 
+            get_apk_icon,
+            list_apk_files, 
+            dump_manifest 
+        } from './pkg/rsapkeditor.js';
 
         let wasmModule = null;
         let selectedFile = null;
@@ -487,6 +617,76 @@
         const versionDisplay = document.getElementById('version-display');
         const apkIconImg = document.getElementById('apkIcon');
         const defaultIcon = document.getElementById('defaultIcon');
+
+        // Signing Elements
+        const radioModes = document.querySelectorAll('input[name="signMode"]');
+        const p12Section = document.getElementById('p12Section');
+        const pemSection = document.getElementById('pemSection');
+        const keystoreFile = document.getElementById('keystoreFile');
+        const keystorePassword = document.getElementById('keystorePassword');
+        const pemFile = document.getElementById('pemFile');
+        const passwordFeedback = document.getElementById('passwordFeedback');
+        
+        // Help UI
+        const toggleHelp = document.getElementById('toggleHelp');
+        const helpContent = document.getElementById('helpContent');
+        const helpArrow = document.getElementById('helpArrow');
+        
+        toggleHelp.addEventListener('click', () => {
+            helpContent.classList.toggle('hidden');
+            helpArrow.textContent = helpContent.classList.contains('hidden') ? '▼' : '▲';
+        });
+
+        // Mode Switching
+        radioModes.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                const mode = e.target.value;
+                p12Section.classList.add('hidden');
+                pemSection.classList.add('hidden');
+                
+                if (mode === 'p12') {
+                    p12Section.classList.remove('hidden');
+                } else if (mode === 'pem') {
+                    pemSection.classList.remove('hidden');
+                }
+                
+                // Reset states
+                passwordFeedback.textContent = '';
+                passwordFeedback.className = '';
+            });
+        });
+
+        // Real-time Password Validation
+        async function validatePassword() {
+            if (keystoreFile.files.length === 0 || !keystorePassword.value) {
+                passwordFeedback.textContent = '';
+                passwordFeedback.className = '';
+                return;
+            }
+            
+            try {
+                const buf = await keystoreFile.files[0].arrayBuffer();
+                const p12Data = new Uint8Array(buf);
+                const pwd = keystorePassword.value;
+                
+                const isValid = verify_keystore_password(p12Data, pwd);
+                
+                if (isValid) {
+                    passwordFeedback.textContent = '✅ Valid Password';
+                    passwordFeedback.style.color = 'var(--success)';
+                } else {
+                    passwordFeedback.textContent = '❌ Invalid Password';
+                    passwordFeedback.style.color = 'var(--error)';
+                }
+            } catch (e) {
+                console.error("Validation error", e);
+                passwordFeedback.textContent = '⚠️ Error checking password';
+                passwordFeedback.style.color = 'var(--warning)';
+            }
+        }
+        
+        keystorePassword.addEventListener('input', validatePassword);
+        keystoreFile.addEventListener('change', validatePassword);
 
         // Initialize WASM
         async function initWasm() {
@@ -534,16 +734,6 @@
                 const uint8Array = new Uint8Array(arrayBuffer);
                 
                 const info = get_apk_info(uint8Array);
-                
-                // // Debug: Log all files in APK
-                // console.log('=== APK FILES ===');
-                // const allFiles = list_apk_files(uint8Array);
-                // console.log(allFiles);
-                
-                // // Debug: Log manifest structure
-                // console.log('=== MANIFEST ===');
-                // const manifestDump = dump_manifest(uint8Array);
-                // console.log(manifestDump);
                 
                 if (info.success) {
                     // Auto-fill the input fields
@@ -625,6 +815,45 @@
                 showStatus('⚠️ Please enter at least one property to edit', 'warning');
                 return;
             }
+            
+            // Checks for Signing Mode
+            const selectedMode = document.querySelector('input[name="signMode"]:checked').value;
+            let keystoreData = null;
+            let keystorePwd = null;
+            let pemString = null;
+            
+            if (selectedMode === 'p12') {
+                if (keystoreFile.files.length === 0) {
+                     showStatus('❌ Please upload a .p12 keystore file', 'error');
+                     return;
+                }
+                keystorePwd = keystorePassword.value;
+                try {
+                    const buf = await keystoreFile.files[0].arrayBuffer();
+                    keystoreData = new Uint8Array(buf);
+                    
+                     // Double check password validity before processing?
+                     // WASM will check it anyway, but good for UX.
+                     if (!verify_keystore_password(keystoreData, keystorePwd || "")) {
+                          showStatus('❌ Invalid keystore password', 'error');
+                          return;
+                     }
+                } catch (e) {
+                     showStatus('❌ Error reading keystore file', 'error');
+                     return;
+                }
+            } else if (selectedMode === 'pem') {
+                if (pemFile.files.length === 0) {
+                    showStatus('❌ Please upload a PEM file', 'error');
+                    return;
+                }
+                try {
+                    pemString = await pemFile.files[0].text(); // Read as Text
+                } catch (e) {
+                    showStatus('❌ Error reading PEM file', 'error');
+                    return;
+                }
+            }
 
             // Validate package name if provided
             if (packageName && !validate_package_name(packageName)) {
@@ -638,12 +867,20 @@
             showStatus('⏳ Processing APK... This may take a moment.', 'info');
 
             try {
-                // Read file as ArrayBuffer
+                // Read APK file as ArrayBuffer
                 const arrayBuffer = await selectedFile.arrayBuffer();
                 const uint8Array = new Uint8Array(arrayBuffer);
 
-                // Call WASM function
-                const result = edit_apk(uint8Array, packageName, appName, versionCode, versionName);
+                // Call WASM function based on mode
+                let result;
+                if (selectedMode === 'p12') {
+                    result = edit_apk_with_keystore(uint8Array, packageName, appName, versionCode, versionName, keystoreData, keystorePwd || "");
+                } else if (selectedMode === 'pem') {
+                    result = edit_apk_with_pem(uint8Array, packageName, appName, versionCode, versionName, pemString);
+                } else {
+                    // Debug Mode
+                    result = edit_apk(uint8Array, packageName, appName, versionCode, versionName);
+                }
 
                 if (result.success) {
                     // Get the modified APK data
@@ -660,8 +897,9 @@
                     a.click();
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
-
-                    showStatus(`✅ APK edited and signed successfully! Download started.<br><small style="color: var(--text-secondary);">The APK is signed with debug keystore and ready to install.</small>`, 'success');
+                    
+                    const signType = selectedMode === 'p12' ? "Custom Keystore" : (selectedMode === 'pem' ? "PEM File" : "Debug Key");
+                    showStatus(`✅ APK edited and signed successfully! Download started.<br><small style="color: var(--text-secondary);">Signed with: ${signType}</small>`, 'success');
                 } else {
                     showStatus(`❌ Error: ${result.error_message}`, 'error');
                 }
@@ -671,7 +909,7 @@
             } finally {
                 processBtn.disabled = false;
                 processBtn.classList.remove('loading');
-                processBtn.querySelector('.btn-text').textContent = 'Edit APK';
+                processBtn.querySelector('.btn-text').textContent = 'Edit & Sign APK';
             }
         }
 

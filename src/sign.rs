@@ -69,8 +69,9 @@ const MAX_CHUNK_SIZE: usize = 1024 * 1024;
 
 /// Sign APK bytes using APK Signature Scheme v2
 /// Returns the signed APK as a new Vec<u8>
-pub fn sign_apk_bytes(apk_data: &[u8]) -> Result<Vec<u8>> {
-    let signer = Signer::new(DEBUG_PEM)?;
+pub fn sign_apk_bytes(apk_data: &[u8], custom_pem: Option<&str>) -> Result<Vec<u8>> {
+    let pem = custom_pem.unwrap_or(DEBUG_PEM);
+    let signer = Signer::new(pem)?;
     
     let mut r = Cursor::new(apk_data);
     let block = parse_apk_signing_block(&mut r)?;

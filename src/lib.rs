@@ -90,6 +90,7 @@ pub fn edit_apk_bytes(
     app_name: Option<&str>,
     version_code: Option<u32>,
     version_name: Option<&str>,
+    custom_pem: Option<&str>,
 ) -> Result<Vec<u8>> {
     // Validate package name if provided
     if let Some(pkg) = package_name {
@@ -162,9 +163,48 @@ pub fn edit_apk_bytes(
     let output_cursor = output_apk.finish()?;
     let unsigned_apk = output_cursor.into_inner();
     
-    // Sign the APK with debug keystore
-    let signed_apk = sign::sign_apk_bytes(&unsigned_apk)?;
+    // Sign the APK
+    let signed_apk = sign::sign_apk_bytes(&unsigned_apk, custom_pem)?;
     Ok(signed_apk)
+}
+
+// Helper to convert P12 to PEM string
+fn convert_p12_to_pem(p12_data: &[u8], password: &str) -> Result<String> {
+    use p12_keystore::KeyStore;
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+    use std::fmt::Write; // for write! macro
+
+    let keystore = KeyStore::from_pkcs12(p12_data, password)
+        .map_err(|e| anyhow::anyhow!("Failed to parse P12: {:?}", e))?;
+    
+    // Find first private key
+    let (_, chain) = keystore.private_key_chain()
+        .ok_or_else(|| anyhow::anyhow!("No private key found in keystore"))?;
+    
+    let mut pem = String::new();
+    
+    // Write certificate chain
+    for cert in chain.certs() {
+        writeln!(&mut pem, "-----BEGIN CERTIFICATE-----")?;
+        // Base64 encode the DER bytes
+        let b64 = BASE64.encode(cert.as_der());
+        // Wrap lines at 64 chars
+        for chunk in b64.as_bytes().chunks(64) {
+             writeln!(&mut pem, "{}", std::str::from_utf8(chunk)?)?;
+        }
+        writeln!(&mut pem, "-----END CERTIFICATE-----")?;
+    }
+    
+    // Write private key
+    // chain.key is PKCS#8 DER bytes
+    writeln!(&mut pem, "-----BEGIN PRIVATE KEY-----")?;
+    let b64 = BASE64.encode(chain.key().as_der());
+    for chunk in b64.as_bytes().chunks(64) {
+         writeln!(&mut pem, "{}", std::str::from_utf8(chunk)?)?;
+    }
+    writeln!(&mut pem, "-----END PRIVATE KEY-----")?;
+    
+    Ok(pem)
 }
 
 // ============ WASM Bindings ============
@@ -175,7 +215,7 @@ pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
 }
 
-/// Edit and sign an APK file from JavaScript
+/// Edit and sign an APK file from JavaScript with default debug key
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn edit_apk(
@@ -191,6 +231,7 @@ pub fn edit_apk(
         app_name.as_deref(),
         version_code,
         version_name.as_deref(),
+        None, // Default debug key
     ) {
         Ok(data) => ApkEditResult {
             data,
@@ -203,6 +244,92 @@ pub fn edit_apk(
             error_message: e.to_string(),
         },
     }
+}
+
+/// Edit and sign an APK file from JavaScript with CUSTOM P12 keystore
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn edit_apk_with_keystore(
+    apk_data: &[u8],
+    package_name: Option<String>,
+    app_name: Option<String>,
+    version_code: Option<u32>,
+    version_name: Option<String>,
+    p12_data: &[u8],
+    p12_password: &str,
+) -> ApkEditResult {
+    // Convert P12 to PEM
+    let pem_result = convert_p12_to_pem(p12_data, p12_password);
+    
+    if let Err(e) = pem_result {
+         return ApkEditResult {
+            data: Vec::new(),
+            success: false,
+            error_message: format!("Keystore Error: {}", e),
+        };
+    }
+    let pem = pem_result.unwrap();
+
+    match edit_apk_bytes(
+        apk_data, 
+        package_name.as_deref(), 
+        app_name.as_deref(),
+        version_code,
+        version_name.as_deref(),
+        Some(&pem),
+    ) {
+        Ok(data) => ApkEditResult {
+            data,
+            success: true,
+            error_message: String::new(),
+        },
+        Err(e) => ApkEditResult {
+            data: Vec::new(),
+            success: false,
+            error_message: e.to_string(),
+        },
+    }
+}
+
+/// Edit and sign an APK file from JavaScript with PEM string (no password)
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn edit_apk_with_pem(
+    apk_data: &[u8],
+    package_name: Option<String>,
+    app_name: Option<String>,
+    version_code: Option<u32>,
+    version_name: Option<String>,
+    pem_string: &str,
+) -> ApkEditResult {
+    match edit_apk_bytes(
+        apk_data, 
+        package_name.as_deref(), 
+        app_name.as_deref(),
+        version_code,
+        version_name.as_deref(),
+        Some(pem_string),
+    ) {
+        Ok(data) => ApkEditResult {
+            data,
+            success: true,
+            error_message: String::new(),
+        },
+        Err(e) => ApkEditResult {
+            data: Vec::new(),
+            success: false,
+            error_message: e.to_string(),
+        },
+    }
+}
+
+/// Verify if the password is correct for the given P12 keystore data
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn verify_keystore_password(p12_data: &[u8], password: &str) -> bool {
+    use p12_keystore::KeyStore;
+    // Attempt to open the keystore. If it succeeds, the password is correct.
+    KeyStore::from_pkcs12(p12_data, password).is_ok()
 }
 
 /// Validate a package name

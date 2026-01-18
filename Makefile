@@ -10,6 +10,9 @@ build:
 	@echo "📂 Preparing dist folder..."
 	mkdir -p dist
 	cp web/index.html dist/
+	cp web/manifest.json dist/
+	cp web/sw.js dist/
+	cp web/icon.svg dist/
 	cp -r web/styles.css dist/ 2>/dev/null || :
 	cp -r pkg dist/
 	@echo "✅ Build complete! Output in 'dist/'"

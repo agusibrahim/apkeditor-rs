@@ -3,7 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>APK Editor Offline</title>
+    <title>APK Editor Offline - Edit & Sign APKs in Browser</title>
+    
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="Edit Android APK files directly in your browser. Change package name, app name, version, and sign with custom keystores (P12/PEM) completely offline using WebAssembly.">
+    <meta name="keywords" content="APK Editor, Edit APK, Sign APK, Change Package Name, Android Manifest Editor, Offline APK Tool, P12 Signer, PEM Signer, WASM, Rust">
+    <meta name="author" content="rsapkeditor">
+    <meta name="theme-color" content="#0f0f23">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://agusibrahim.github.io/apkeditor-rs/">
+    <meta property="og:title" content="APK Editor Offline - Edit & Sign APKs in Browser">
+    <meta property="og:description" content="Edit Android APK files directly in your browser. Change package name, app name, version, and sign with custom keystores (P12/PEM) completely offline.">
+    
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:title" content="APK Editor Offline - Edit & Sign APKs in Browser">
+    <meta property="twitter:description" content="Edit Android APK files directly in your browser. Change package name, app name, version, and sign with custom keystores (P12/PEM) completely offline.">
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="APK Editor">
+    <link rel="apple-touch-icon" href="icon.png">
     <style>
         :root {
             --bg-primary: #0f0f23;
@@ -599,6 +623,19 @@
 
         let wasmModule = null;
         let selectedFile = null;
+
+        // Register Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+        }
 
         // DOM Elements
         const dropZone = document.getElementById('dropZone');

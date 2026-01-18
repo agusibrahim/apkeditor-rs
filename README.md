@@ -11,10 +11,17 @@ A pure **Rust** + **WebAssembly** library and web interface for editing Android 
   - **Package Name**: Globally replaces the package name in the AndroidManifest string pool (fixes `INSTALL_FAILED_DUPLICATE_PERMISSION`).
   - **App Name**: Renames the application label.
   - **Version Info**: Updates `versionCode` and `versionName`.
+- **Advanced Signing Options**:
+  - **Debug Key**: Default signing with built-in debug keystore (v2 scheme).
+  - **Custom Keystore**: Support for `.p12` / `.pfx` files with **real-time password validation**.
+  - **PEM Signing**: Support for raw PEM files (containing both Private Key and Certificate) without password.
 - **Icon Preview**:
   - Displays the app icon even from obfuscated APKs.
   - Smart detection (Launcher -> Mipmap -> File Size heuristics).
-- **Auto-Signing**: Automatically signs the edited APK with a built-in debug keystore (scheme v2).
+
+## Credits
+
+- **p12-keystore**: This project includes a modified version of the [p12-keystore](https://crates.io/crates/p12-keystore) crate (located in `p12-keystore-main`) to support pure Rust PKCS#12 parsing in a WASM environment.
 
 ## Build
 

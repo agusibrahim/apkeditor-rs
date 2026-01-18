@@ -408,15 +408,21 @@ fn extract_icon(apk_data: &[u8]) -> Result<Vec<u8>> {
         icon_path = axml.get_attribute_value("application", "icon", arsc.as_ref());
     }
 
-    // 4. Read the file
+    // 4. Optimize Icon Resolution
+    // ARSC lookup often returns the default (mdpi) configuration.
+    // We should scan for higher resolution versions of the same file.
     if let Some(path) = icon_path {
+        // Try to find a better version
+        if let Some(best_data) = find_high_res_variant(&mut archive, &path) {
+             return Ok(best_data);
+        }
+    
+        // Fallback to the exact path found in ARSC
         if let Ok(mut file) = archive.by_name(&path) {
             let mut data = Vec::new();
             file.read_to_end(&mut data)?;
             return Ok(data);
         }
-        // Try fallback if path exists but maybe different extension or location?
-        // Usually path from ARSC is accurate.
     }
     
     // Fallback: Heuristic search if parsing fail or no icon
@@ -457,6 +463,75 @@ fn extract_icon(apk_data: &[u8]) -> Result<Vec<u8>> {
     }
     
     anyhow::bail!("No icon found via Manifest or Heuristic")
+}
+
+/// Helper to find higher resolution variant of an icon path
+fn find_high_res_variant(archive: &mut ZipArchive<Cursor<&[u8]>>, original_path: &str) -> Option<Vec<u8>> {
+    let path_parts: Vec<&str> = original_path.split('/').collect();
+    if path_parts.len() < 2 { return None; } // expect res/type/name
+    
+    // Check if it's in res/
+    if path_parts[0] != "res" { return None; }
+    
+    // Extract type (mipmap or drawable) from parent folder
+    // Parent folder example: "mipmap-mdpi" or "mipmap"
+    let parent_dir = path_parts[path_parts.len() - 2];
+    let resource_type = parent_dir.split('-').next().unwrap_or(parent_dir);
+    
+    // Extract filename stem (ic_launcher) from filename (ic_launcher.png or ic_launcher.xml)
+    let filename = path_parts[path_parts.len() - 1];
+    let stem = filename.split('.').next().unwrap_or(filename);
+    
+    // Scan for candidates
+    let mut candidates: Vec<(usize, i32)> = Vec::new(); // (index, score)
+    
+    for i in 0..archive.len() {
+        if let Ok(file) = archive.by_index(i) {
+            let name = file.name();
+            
+            // Fast check: must contain stem and end in .png
+            if !name.ends_with(".png") { continue; }
+            
+            let parts: Vec<&str> = name.split('/').collect();
+            if parts.len() < 2 { continue; }
+            
+            // Check resource type match
+            let file_parent = parts[parts.len() - 2];
+            if !file_parent.starts_with(resource_type) { continue; }
+            
+            // Check filename stem match
+            let file_name = parts[parts.len() - 1];
+            if !file_name.starts_with(stem) { continue; }
+            
+            // Check strictly that stem matches (ic_launcher.png vs ic_launcher_background.png)
+            if file_name != format!("{}.png", stem) { continue; }
+
+            // Score based on density
+            let mut score = 0;
+            if file_parent.contains("xxxhdpi") { score = 100; }
+            else if file_parent.contains("xxhdpi") { score = 90; }
+            else if file_parent.contains("xhdpi") { score = 80; }
+            else if file_parent.contains("hdpi") { score = 70; }
+            else if file_parent.contains("mdpi") { score = 60; }
+            else if file_parent.contains("anydpi") { score = 50; } // XML alias? but we filtered for png.
+            
+            candidates.push((i, score));
+        }
+    }
+    
+    // Sort by score desc
+    candidates.sort_by(|a, b| b.1.cmp(&a.1));
+    
+    if let Some((idx, _)) = candidates.first() {
+        if let Ok(mut file) = archive.by_index(*idx) {
+            let mut data = Vec::new();
+            if file.read_to_end(&mut data).is_ok() {
+                return Some(data);
+            }
+        }
+    }
+    
+    None
 }
 
 /// Debug: List all files in APK (returns newline-separated list)

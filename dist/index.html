@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APK Editor Offline</title>
+    <style>
+        :root {
+            --bg-primary: #0f0f23;
+            --bg-secondary: #1a1a2e;
+            --bg-tertiary: #16213e;
+            --accent: #00d4ff;
+            --accent-hover: #00a8cc;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0b0;
+            --success: #00ff88;
+            --error: #ff4757;
+            --warning: #ffa502;
+            --border-radius: 12px;
+            --shadow: 0 8px 32px rgba(0, 212, 255, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 600px;
+            width: 100%;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent), #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        .badge {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--accent), #a855f7);
+            color: var(--bg-primary);
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+
+        .version-badge {
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            margin-left: 0.5rem;
+        }
+
+        .card {
+            background: var(--bg-secondary);
+            border-radius: var(--border-radius);
+            padding: 2rem;
+            box-shadow: var(--shadow);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            margin-bottom: 1.5rem;
+        }
+
+        .card h2 {
+            font-size: 1.25rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .card h2 .icon {
+            font-size: 1.5rem;
+        }
+
+        .upload-zone {
+            border: 2px dashed rgba(0, 212, 255, 0.3);
+            border-radius: var(--border-radius);
+            padding: 3rem 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(0, 212, 255, 0.02);
+        }
+
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: var(--accent);
+            background: rgba(0, 212, 255, 0.05);
+            transform: translateY(-2px);
+        }
+
+        .upload-zone .icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .upload-zone p {
+            color: var(--text-secondary);
+        }
+
+        .upload-zone .filename {
+            color: var(--accent);
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .label-hint {
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.4);
+            font-weight: normal;
+        }
+
+        input[type="text"],
+        input[type="number"] {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            background: var(--bg-tertiary);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+        }
+
+        input[type="text"]::placeholder,
+        input[type="number"]::placeholder {
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        input[type="text"].error,
+        input[type="number"].error {
+            border-color: var(--error);
+        }
+
+        input[type="text"].valid,
+        input[type="number"].valid {
+            border-color: var(--success);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 1rem;
+            background: linear-gradient(135deg, var(--accent), #a855f7);
+            color: var(--bg-primary);
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 212, 255, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn.loading .spinner {
+            display: inline-block;
+        }
+
+        .spinner {
+            display: none;
+            width: 18px;
+            height: 18px;
+            border: 2px solid transparent;
+            border-top-color: currentColor;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            display: none;
+        }
+
+        .status.show {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .status.success {
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            color: var(--success);
+        }
+
+        .status.error {
+            background: rgba(255, 71, 87, 0.1);
+            border: 1px solid rgba(255, 71, 87, 0.3);
+            color: var(--error);
+        }
+
+        .status.info {
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            color: var(--accent);
+        }
+
+        .status.warning {
+            background: rgba(255, 165, 2, 0.1);
+            border: 1px solid rgba(255, 165, 2, 0.3);
+            color: var(--warning);
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
+
+        .file-info .icon {
+            font-size: 2rem;
+        }
+
+        .file-info .apk-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 16px;
+            object-fit: cover;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .file-info .details {
+            flex: 1;
+        }
+
+        .file-info .name {
+            font-weight: 600;
+        }
+
+        .file-info .size {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .feature {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .feature .check {
+            color: var(--success);
+        }
+
+        footer {
+            margin-top: auto;
+            padding-top: 2rem;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(15, 15, 35, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .loading-overlay .spinner {
+            display: block;
+            width: 48px;
+            height: 48px;
+            border-width: 4px;
+            border-color: var(--accent);
+            border-top-color: transparent;
+        }
+
+        .loading-overlay p {
+            margin-top: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .loading-overlay.loaded {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="spinner"></div>
+        <p id="loading-text">Loading WASM module...</p>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>🤖 APK Editor</h1>
+            <p class="subtitle">Edit Android APK files in your browser</p>
+            <span class="badge">Powered by Rust + WASM</span>
+            <span id="version-display" class="badge version-badge"></span>
+        </header>
+
+        <div class="card">
+            <h2><span class="icon">📦</span> Select APK File</h2>
+            <div class="upload-zone" id="dropZone">
+                <div class="icon">📱</div>
+                <p>Drag & drop your APK file here</p>
+                <p>or click to browse</p>
+            </div>
+            <input type="file" id="fileInput" accept=".apk" class="hidden">
+            <div id="fileInfo" class="file-info hidden">
+                <img id="apkIcon" class="apk-icon" src="" alt="App Icon" style="display: none;">
+                <div class="icon" id="defaultIcon">📱</div>
+                <div class="details">
+                    <div class="name" id="fileName">-</div>
+                    <div class="size" id="fileSize">-</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2><span class="icon">✏️</span> Edit Manifest Properties</h2>
+            <div class="form-group">
+                <label for="packageName">
+                    Package Name 
+                    <span class="label-hint">(e.g., com.example.myapp)</span>
+                </label>
+                <input type="text" id="packageName" placeholder="com.example.myapp">
+            </div>
+            <div class="form-group">
+                <label for="appName">
+                    App Name
+                    <span class="label-hint">(display name in launcher)</span>
+                </label>
+                <input type="text" id="appName" placeholder="My Application">
+            </div>
+            <div class="form-group" style="display: grid; grid-template-columns: 1fr 2fr; gap: 1rem;">
+                <div>
+                    <label for="versionCode">
+                        Version Code
+                        <span class="label-hint">(integer)</span>
+                    </label>
+                    <input type="number" id="versionCode" placeholder="1" min="1">
+                </div>
+                <div>
+                    <label for="versionName">
+                        Version Name
+                        <span class="label-hint">(e.g., 1.0.0)</span>
+                    </label>
+                    <input type="text" id="versionName" placeholder="1.0.0">
+                </div>
+            </div>
+            <div class="features">
+                <div class="feature"><span class="check">✓</span> Edit Package Name</div>
+                <div class="feature"><span class="check">✓</span> Edit App Name</div>
+                <div class="feature"><span class="check">✓</span> Edit Version</div>
+                <div class="feature"><span class="check">✓</span> Auto Sign APK</div>
+            </div>
+        </div>
+
+        <button id="processBtn" class="btn" disabled>
+            <span class="spinner"></span>
+            <span class="btn-text">Edit APK</span>
+        </button>
+
+        <div id="status" class="status"></div>
+    </div>
+
+    <footer>
+        <p>Built with Rust 🦀 and WebAssembly</p>
+        <p>All processing happens in your browser - no data is uploaded</p>
+    </footer>
+
+    <script type="module">
+        import init, { edit_apk, validate_package_name, get_version, init_panic_hook, get_apk_info, get_apk_icon, list_apk_files, dump_manifest } from './pkg/rsapkeditor.js';
+
+        let wasmModule = null;
+        let selectedFile = null;
+
+        // DOM Elements
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const packageNameInput = document.getElementById('packageName');
+        const appNameInput = document.getElementById('appName');
+        const versionCodeInput = document.getElementById('versionCode');
+        const versionNameInput = document.getElementById('versionName');
+        const processBtn = document.getElementById('processBtn');
+        const status = document.getElementById('status');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const loadingText = document.getElementById('loading-text');
+        const versionDisplay = document.getElementById('version-display');
+        const apkIconImg = document.getElementById('apkIcon');
+        const defaultIcon = document.getElementById('defaultIcon');
+
+        // Initialize WASM
+        async function initWasm() {
+            try {
+                loadingText.textContent = 'Loading WASM module...';
+                wasmModule = await init();
+                
+                // Initialize panic hook for better error messages
+                init_panic_hook();
+                
+                // Display version
+                const version = get_version();
+                versionDisplay.textContent = `v${version}`;
+                
+                loadingOverlay.classList.add('loaded');
+                setTimeout(() => loadingOverlay.classList.add('hidden'), 300);
+                
+                showStatus('✅ WASM module loaded successfully!', 'success');
+                setTimeout(() => status.classList.remove('show'), 3000);
+                
+            } catch (error) {
+                loadingText.innerHTML = `❌ Failed to load WASM module<br><small style="color: var(--text-secondary);">${error.message}</small>`;
+                console.error('WASM init error:', error);
+            }
+        }
+
+        // File handling
+        async function handleFile(file) {
+            if (!file || !file.name.toLowerCase().endsWith('.apk')) {
+                showStatus('❌ Please select a valid APK file', 'error');
+                return;
+            }
+
+            selectedFile = file;
+            fileName.textContent = file.name;
+            fileSize.textContent = formatFileSize(file.size);
+            fileInfo.classList.remove('hidden');
+            processBtn.disabled = false;
+            
+            showStatus(`📱 Reading APK info...`, 'info');
+            
+            try {
+                // Read file and extract APK info
+                const arrayBuffer = await file.arrayBuffer();
+                const uint8Array = new Uint8Array(arrayBuffer);
+                
+                const info = get_apk_info(uint8Array);
+                
+                // // Debug: Log all files in APK
+                // console.log('=== APK FILES ===');
+                // const allFiles = list_apk_files(uint8Array);
+                // console.log(allFiles);
+                
+                // // Debug: Log manifest structure
+                // console.log('=== MANIFEST ===');
+                // const manifestDump = dump_manifest(uint8Array);
+                // console.log(manifestDump);
+                
+                if (info.success) {
+                    // Auto-fill the input fields
+                    packageNameInput.value = info.package_name;
+                    packageNameInput.className = info.package_name ? 'valid' : '';
+                    
+                    if (info.app_name && info.app_name !== '(resource reference)') {
+                        appNameInput.value = info.app_name;
+                    } else {
+                        appNameInput.value = '';
+                        appNameInput.placeholder = info.app_name === '(resource reference)' 
+                            ? '(uses resource reference)' 
+                            : 'My Application';
+                    }
+                    
+                    // Auto-fill version info
+                    if (info.version_code > 0) {
+                        versionCodeInput.value = info.version_code;
+                    }
+                    if (info.version_name) {
+                        versionNameInput.value = info.version_name;
+                    }
+                    
+                    // Try to load APK icon
+                    try {
+                        const iconData = get_apk_icon(uint8Array);
+                        if (iconData.length > 0) {
+                            const blob = new Blob([iconData], { type: 'image/png' });
+                            const iconUrl = URL.createObjectURL(blob);
+                            apkIconImg.src = iconUrl;
+                            apkIconImg.style.display = 'block';
+                            defaultIcon.style.display = 'none';
+                        } else {
+                            apkIconImg.style.display = 'none';
+                            defaultIcon.style.display = 'block';
+                        }
+                    } catch (iconError) {
+                        console.error('Error loading icon:', iconError);
+                        apkIconImg.style.display = 'none';
+                        defaultIcon.style.display = 'block';
+                    }
+                    
+                    showStatus(`✅ Loaded: ${file.name}<br><small style="color: var(--text-secondary);">Package: ${info.package_name} | v${info.version_name} (${info.version_code})</small>`, 'success');
+                } else {
+                    showStatus(`📱 Selected: ${file.name}<br><small style="color: var(--text-secondary);">Could not read manifest: ${info.error_message}</small>`, 'warning');
+                }
+            } catch (error) {
+                console.error('Error reading APK info:', error);
+                showStatus(`📱 Selected: ${file.name}`, 'info');
+            }
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+
+        // Status display
+        function showStatus(message, type = 'info') {
+            status.innerHTML = message;
+            status.className = `status show ${type}`;
+        }
+
+        // Process APK
+        async function processApk() {
+            if (!selectedFile) {
+                showStatus('❌ Please select a file first', 'error');
+                return;
+            }
+
+            const packageName = packageNameInput.value.trim() || null;
+            const appName = appNameInput.value.trim() || null;
+            const versionCodeStr = versionCodeInput.value.trim();
+            const versionCode = versionCodeStr ? parseInt(versionCodeStr, 10) : null;
+            const versionName = versionNameInput.value.trim() || null;
+
+            if (!packageName && !appName && !versionCode && !versionName) {
+                showStatus('⚠️ Please enter at least one property to edit', 'warning');
+                return;
+            }
+
+            // Validate package name if provided
+            if (packageName && !validate_package_name(packageName)) {
+                showStatus('❌ Invalid package name format. Use format: com.example.app', 'error');
+                return;
+            }
+
+            processBtn.disabled = true;
+            processBtn.classList.add('loading');
+            processBtn.querySelector('.btn-text').textContent = 'Processing...';
+            showStatus('⏳ Processing APK... This may take a moment.', 'info');
+
+            try {
+                // Read file as ArrayBuffer
+                const arrayBuffer = await selectedFile.arrayBuffer();
+                const uint8Array = new Uint8Array(arrayBuffer);
+
+                // Call WASM function
+                const result = edit_apk(uint8Array, packageName, appName, versionCode, versionName);
+
+                if (result.success) {
+                    // Get the modified APK data
+                    const modifiedData = result.get_data();
+                    
+                    // Create download
+                    const blob = new Blob([modifiedData], { type: 'application/vnd.android.package-archive' });
+                    const url = URL.createObjectURL(blob);
+                    
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = selectedFile.name.replace('.apk', '_edited.apk');
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+
+                    showStatus(`✅ APK edited and signed successfully! Download started.<br><small style="color: var(--text-secondary);">The APK is signed with debug keystore and ready to install.</small>`, 'success');
+                } else {
+                    showStatus(`❌ Error: ${result.error_message}`, 'error');
+                }
+            } catch (error) {
+                console.error('Processing error:', error);
+                showStatus(`❌ Error: ${error.message}`, 'error');
+            } finally {
+                processBtn.disabled = false;
+                processBtn.classList.remove('loading');
+                processBtn.querySelector('.btn-text').textContent = 'Edit APK';
+            }
+        }
+
+        // Event Listeners
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        processBtn.addEventListener('click', processApk);
+
+        // Package name validation with visual feedback
+        packageNameInput.addEventListener('input', (e) => {
+            const value = e.target.value.trim();
+            if (!value) {
+                e.target.className = '';
+                return;
+            }
+            if (validate_package_name && validate_package_name(value)) {
+                e.target.className = 'valid';
+            } else {
+                e.target.className = 'error';
+            }
+        });
+
+        // Initialize
+        initWasm();
+    </script>
+</body>
+</html>

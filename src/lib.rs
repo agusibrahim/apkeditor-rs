@@ -121,6 +121,16 @@ pub fn edit_apk_bytes(
             std::io::copy(&mut file, &mut output_apk)?;
             continue;
         }
+
+        // Handle native libraries (.so) - must be uncompressed and aligned
+        if file.name().ends_with(".so") {
+            let options = zip::write::FileOptions::<ExtendedFileOptions>::default()
+                .compression_method(zip::CompressionMethod::Stored)
+                .with_alignment(4);
+            output_apk.start_file(file.name(), options)?;
+            std::io::copy(&mut file, &mut output_apk)?;
+            continue;
+        }
         
         // Edit AndroidManifest.xml if any edit options are provided
         if file.name() == "AndroidManifest.xml" && needs_manifest_edit {

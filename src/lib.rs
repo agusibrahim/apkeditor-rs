@@ -15,6 +15,8 @@ use wasm_bindgen::prelude::*;
 #[cfg(feature = "wasm")]
 use js_sys::Uint8Array;
 
+use apk_info_axml::{AXML, ARSC};
+
 /// Result of APK editing operation
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
@@ -287,83 +289,44 @@ pub fn get_apk_info(apk_data: &[u8]) -> ApkInfo {
     }
 }
 
-/// Extract package name, app name, version code, version name from APK
+/// Extract package name, app name, version code, version name using apk-info-axml
 fn extract_apk_info(apk_data: &[u8]) -> Result<(String, String, u32, String)> {
-    use apk::res::{Chunk, ResValueType};
-    
     let cursor = Cursor::new(apk_data);
     let mut archive = ZipArchive::new(cursor)?;
-    
-    let mut manifest_file = archive.by_name("AndroidManifest.xml")?;
-    let mut manifest_data = Vec::new();
-    manifest_file.read_to_end(&mut manifest_data)?;
-    
-    let mut cursor = Cursor::new(&manifest_data);
-    let Chunk::Xml(xchunks) = Chunk::parse(&mut cursor)? else {
-        anyhow::bail!("Invalid manifest format");
-    };
-    
-    let (string_pool, chunks) = xchunks.split_first().unwrap();
-    let Chunk::StringPool(strings, _) = string_pool else {
-        anyhow::bail!("Invalid string pool");
-    };
-    
-    let mut package_name = String::new();
-    let mut app_name = String::new();
-    let mut version_code: u32 = 0;
-    let mut version_name = String::new();
-    
-    for chunk in chunks {
-        if let Chunk::XmlStartElement(_, el, attrs) = chunk {
-            let el_name = strings.get(el.name as usize).map(|s| s.as_str()).unwrap_or("");
-            
-            // Get package name and version from manifest element
-            if el_name == "manifest" {
-                for attr in attrs {
-                    let attr_name = strings.get(attr.name as usize).map(|s| s.as_str()).unwrap_or("");
-                    
-                    if attr_name == "package" {
-                        if let Some(ResValueType::String) = ResValueType::from_u8(attr.typed_value.data_type) {
-                            if let Some(s) = strings.get(attr.typed_value.data as usize) {
-                                package_name = s.clone();
-                            }
-                        }
-                    }
-                    
-                    if attr_name == "versionCode" {
-                        // versionCode is typically an integer
-                        version_code = attr.typed_value.data;
-                    }
-                    
-                    if attr_name == "versionName" {
-                        if let Some(ResValueType::String) = ResValueType::from_u8(attr.typed_value.data_type) {
-                            if let Some(s) = strings.get(attr.typed_value.data as usize) {
-                                version_name = s.clone();
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Get app name from application element
-            if el_name == "application" && app_name.is_empty() {
-                for attr in attrs {
-                    let attr_name = strings.get(attr.name as usize).map(|s| s.as_str()).unwrap_or("");
-                    if attr_name == "label" {
-                        if let Some(ResValueType::String) = ResValueType::from_u8(attr.typed_value.data_type) {
-                            if let Some(s) = strings.get(attr.typed_value.data as usize) {
-                                app_name = s.clone();
-                            }
-                        } else {
-                            // Label might be a resource reference, show placeholder
-                            app_name = "(resource reference)".to_string();
-                        }
-                    }
-                }
+
+    // 1. Try to read resources.arsc
+    let mut arsc: Option<ARSC> = None;
+    if let Ok(mut file) = archive.by_name("resources.arsc") {
+        let mut arsc_data = Vec::new();
+        if file.read_to_end(&mut arsc_data).is_ok() {
+            let mut input = arsc_data.as_slice();
+            if let Ok(parsed) = ARSC::new(&mut input) {
+                arsc = Some(parsed);
             }
         }
     }
+
+    // 2. Read AndroidManifest.xml
+    let mut manifest_file = archive.by_name("AndroidManifest.xml")?;
+    let mut manifest_data = Vec::new();
+    manifest_file.read_to_end(&mut manifest_data)?;
+    drop(manifest_file); // release archive borrow
+
+    let mut input = manifest_data.as_slice();
+    let axml = AXML::new(&mut input, arsc.as_ref()).map_err(|e| anyhow::anyhow!("AXML Parse Error: {:?}", e))?;
+
+    // 3. Extract Info
+    let package_name = axml.get_attribute_value("manifest", "package", arsc.as_ref()).unwrap_or_default();
     
+    // Version
+    let version_code_str = axml.get_attribute_value("manifest", "versionCode", arsc.as_ref()).unwrap_or("0".to_string());
+    let version_code = version_code_str.parse::<u32>().unwrap_or(0);
+    
+    let version_name = axml.get_attribute_value("manifest", "versionName", arsc.as_ref()).unwrap_or_default();
+
+    // App Name (Label)
+    let app_name = axml.get_attribute_value("application", "label", arsc.as_ref()).unwrap_or_default();
+
     Ok((package_name, app_name, version_code, version_name))
 }
 
@@ -375,6 +338,125 @@ pub fn get_apk_icon(apk_data: &[u8]) -> Uint8Array {
         Ok(data) => Uint8Array::from(&data[..]),
         Err(_) => Uint8Array::new_with_length(0),
     }
+}
+
+/// Extract the best available icon from APK using Manifest Parsing
+fn extract_icon(apk_data: &[u8]) -> Result<Vec<u8>> {
+    let cursor = Cursor::new(apk_data);
+    let mut archive = ZipArchive::new(cursor)?;
+
+    // 1. Try to read resources.arsc
+    let mut arsc = None;
+    let mut arsc_data = Vec::new();
+    if let Ok(mut file) = archive.by_name("resources.arsc") {
+        if file.read_to_end(&mut arsc_data).is_ok() {
+            let mut input = arsc_data.as_slice();
+            if let Ok(parsed) = ARSC::new(&mut input) {
+                arsc = Some(parsed);
+            }
+        }
+    }
+
+    // 2. Read Manifest
+    let mut manifest_file = archive.by_name("AndroidManifest.xml")?;
+    let mut manifest_data = Vec::new();
+    manifest_file.read_to_end(&mut manifest_data)?;
+    drop(manifest_file);
+
+    let mut input = manifest_data.as_slice();
+    let axml = AXML::new(&mut input, arsc.as_ref()).map_err(|e| anyhow::anyhow!("AXML Parse Error: {:?}", e))?;
+
+    // 3. Find Icon Path
+    // Priority 1: Launcher Activity Icon through helper
+    // The helper returns an iterator, we take the first one or check if it matches application?
+    // Wait, get_main_activities return the *activity name*. We want the icon attribute of that activity.
+    
+    let main_activities: Vec<String> = axml.get_main_activities().map(|s| s.to_string()).collect();
+    let mut icon_path = None;
+
+    if let Some(main_activity) = main_activities.first() {
+        // Find this activity in AXML manually to get its icon attribute?
+        // Or simpler: iterate attributes of the activity tag?
+        // AXML struct doesn't expose easy "find element by attribute value" from public API easily.
+        // It exposes `get_attribute_value` but that searches by tag.
+        
+        // We can traverse the tree:
+        // root -> children (application) -> children (activity)
+        // This is getting complicated to navigate via public API if not exposed.
+        // AXML public API has `root` field which is `Element`.
+        
+        if let Some(app) = axml.root.childrens().find(|c| c.name() == "application") {
+            // Find the activity element matching key
+             if let Some(act_node) = app.childrens().find(|c| c.attr("name") == Some(main_activity.as_str())) {
+                if let Some(val) = act_node.attr("icon") {
+                    // Start with @? Resolve.
+                    if val.starts_with("@") {
+                         if let Some(arsc_ref) = arsc.as_ref() {
+                             // strip @ and get
+                             icon_path = arsc_ref.get_resource_value_by_name(&val[1..]);
+                         }
+                    } else {
+                        icon_path = Some(val.to_string());
+                    }
+                }
+             }
+        }
+    }
+
+    // Priority 2: Application Icon
+    if icon_path.is_none() {
+        icon_path = axml.get_attribute_value("application", "icon", arsc.as_ref());
+    }
+
+    // 4. Read the file
+    if let Some(path) = icon_path {
+        if let Ok(mut file) = archive.by_name(&path) {
+            let mut data = Vec::new();
+            file.read_to_end(&mut data)?;
+            return Ok(data);
+        }
+        // Try fallback if path exists but maybe different extension or location?
+        // Usually path from ARSC is accurate.
+    }
+    
+    // Fallback: Heuristic search if parsing fail or no icon
+    
+    let mut best_icon_index = None;
+    let mut max_score = 0;
+    
+    for i in 0..archive.len() {
+        let file = archive.by_index(i)?;
+        let name = file.name().to_string();
+        let name_lower = name.to_lowercase();
+        let size = file.size();
+        
+        if !name_lower.ends_with(".png") { continue; }
+        if name_lower.contains(".9.png") { continue; }
+        
+        let mut score = 0;
+        if name_lower.contains("launcher") { score += 50; }
+        if name_lower.contains("mipmap") { score += 10; }
+        if name_lower.contains("xhdpi") { score += 20; }
+        
+        // Basic filter
+        if size < 1000 || size > 100_000 { continue; }
+
+        if score > max_score {
+            max_score = score;
+            best_icon_index = Some(i);
+        }
+    }
+    
+    if let Some(idx) = best_icon_index {
+        if let Ok(mut file) = archive.by_index(idx) {
+            let mut data = Vec::new();
+            if file.read_to_end(&mut data).is_ok() {
+                return Ok(data);
+            }
+        }
+    }
+    
+    anyhow::bail!("No icon found via Manifest or Heuristic")
 }
 
 /// Debug: List all files in APK (returns newline-separated list)
@@ -399,13 +481,23 @@ pub fn list_apk_files(apk_data: &[u8]) -> String {
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn dump_manifest(apk_data: &[u8]) -> String {
-    use apk::res::{Chunk, ResValueType};
-    
+    // New dump implementation using AXML
     let cursor = Cursor::new(apk_data);
     let Ok(mut archive) = ZipArchive::new(cursor) else {
         return "Error: Could not open APK".to_string();
     };
-    
+
+    let mut arsc = None;
+    let mut arsc_data = Vec::new();
+    if let Ok(mut file) = archive.by_name("resources.arsc") {
+        if file.read_to_end(&mut arsc_data).is_ok() {
+            let mut input = arsc_data.as_slice();
+            if let Ok(parsed) = ARSC::new(&mut input) {
+                arsc = Some(parsed);
+            }
+        }
+    }
+
     let Ok(mut manifest_file) = archive.by_name("AndroidManifest.xml") else {
         return "Error: No AndroidManifest.xml found".to_string();
     };
@@ -414,127 +506,10 @@ pub fn dump_manifest(apk_data: &[u8]) -> String {
     if manifest_file.read_to_end(&mut manifest_data).is_err() {
         return "Error: Could not read manifest".to_string();
     }
-    drop(manifest_file);
     
-    let mut cursor = Cursor::new(&manifest_data);
-    let Ok(Chunk::Xml(xchunks)) = Chunk::parse(&mut cursor) else {
-        return "Error: Could not parse manifest".to_string();
-    };
-    
-    let mut output = String::new();
-    
-    // Get string pool
-    let (string_pool, chunks) = xchunks.split_first().unwrap();
-    let Chunk::StringPool(strings, _) = string_pool else {
-        return "Error: No string pool".to_string();
-    };
-    
-    output.push_str("=== STRING POOL ===\n");
-    for (i, s) in strings.iter().enumerate() {
-        output.push_str(&format!("[{}] {}\n", i, s));
+    let mut input = manifest_data.as_slice();
+    match AXML::new(&mut input, arsc.as_ref()) {
+        Ok(axml) => axml.get_xml_string(),
+        Err(e) => format!("Error parsing manifest: {:?}", e),
     }
-    
-    output.push_str("\n=== ELEMENTS ===\n");
-    for chunk in chunks {
-        if let Chunk::XmlStartElement(_, el, attrs) = chunk {
-            let el_name = strings.get(el.name as usize).map(|s| s.as_str()).unwrap_or("?");
-            output.push_str(&format!("<{}>\n", el_name));
-            
-            for attr in attrs {
-                let attr_name = strings.get(attr.name as usize).map(|s| s.as_str()).unwrap_or("?");
-                let type_name = match ResValueType::from_u8(attr.typed_value.data_type) {
-                    Some(ResValueType::String) => "string",
-                    Some(ResValueType::IntDec) => "int",
-                    Some(ResValueType::IntHex) => "hex",
-                    Some(ResValueType::Reference) => "ref",
-                    Some(ResValueType::IntBoolean) => "bool",
-                    _ => "other",
-                };
-                let value = if let Some(ResValueType::String) = ResValueType::from_u8(attr.typed_value.data_type) {
-                    strings.get(attr.typed_value.data as usize).map(|s| s.as_str()).unwrap_or("?").to_string()
-                } else {
-                    format!("0x{:08x}", attr.typed_value.data)
-                };
-                output.push_str(&format!("  {} ({}) = {}\n", attr_name, type_name, value));
-            }
-        }
-    }
-    
-    output
-}
-
-/// Extract the best available icon from APK
-fn extract_icon(apk_data: &[u8]) -> Result<Vec<u8>> {
-    let cursor = Cursor::new(apk_data);
-    let mut archive = ZipArchive::new(cursor)?;
-    
-    // Collect all PNG files with metadata
-    let mut named_icons: Vec<(usize, i32, u64)> = Vec::new();  // (index, score, size)
-    let mut fallback_pngs: Vec<(usize, u64)> = Vec::new();     // (index, size)
-    
-    for i in 0..archive.len() {
-        let file = archive.by_index(i)?;
-        let name = file.name().to_string();
-        let name_lower = name.to_lowercase();
-        let size = file.size();
-        
-        // Skip non-PNG files
-        if !name_lower.ends_with(".png") {
-            continue;
-        }
-        
-        // Skip adaptive icon parts and 9-patch
-        if name_lower.contains("_foreground") || name_lower.contains("_background") 
-            || name_lower.contains("_round") || name_lower.contains(".9.png") {
-            continue;
-        }
-        
-        // Check if it has launcher in name (non-obfuscated)
-        if name_lower.contains("launcher") {
-            let score = if name_lower.contains("xhdpi") { 100 }
-                else if name_lower.contains("hdpi") && !name_lower.contains("xxhdpi") { 90 }
-                else if name_lower.contains("xxhdpi") { 80 }
-                else if name_lower.contains("mdpi") { 70 }
-                else { 50 };
-            let score = if name_lower.contains("mipmap") { score + 10 } else { score };
-            named_icons.push((i, score, size));
-        } else if name_lower.starts_with("res/") && size >= 1000 && size <= 50000 {
-            // Fallback: PNG files in res/ folder with icon-like size (1KB-50KB)
-            fallback_pngs.push((i, size));
-        }
-    }
-    
-    // Try named icons first
-    if !named_icons.is_empty() {
-        named_icons.sort_by(|a, b| b.1.cmp(&a.1));
-        for (idx, _, _) in named_icons {
-            if let Ok(mut file) = archive.by_index(idx) {
-                let mut data = Vec::new();
-                if file.read_to_end(&mut data).is_ok() && !data.is_empty() {
-                    return Ok(data);
-                }
-            }
-        }
-    }
-    
-    // Fallback: sort by size descending, prefer medium-sized PNGs (5KB-20KB typical for icons)
-    if !fallback_pngs.is_empty() {
-        fallback_pngs.sort_by(|a, b| {
-            // Prefer sizes between 5KB-20KB (typical icon size)
-            let ideal_a = if a.1 >= 5000 && a.1 <= 20000 { 1000 } else { 0 };
-            let ideal_b = if b.1 >= 5000 && b.1 <= 20000 { 1000 } else { 0 };
-            (ideal_b + b.1 as i64).cmp(&(ideal_a + a.1 as i64))
-        });
-        
-        for (idx, _) in fallback_pngs {
-            if let Ok(mut file) = archive.by_index(idx) {
-                let mut data = Vec::new();
-                if file.read_to_end(&mut data).is_ok() && !data.is_empty() {
-                    return Ok(data);
-                }
-            }
-        }
-    }
-    
-    anyhow::bail!("No icon found in APK")
 }

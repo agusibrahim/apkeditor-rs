@@ -29,6 +29,8 @@ sha2 = "0.10"
 rsa = "0.7"
 rasn = "0.6"
 rasn-pkix = "0.6"
+apk-info-axml = "1.0.9"
+winnow = "0.6"
 
 [features]
 default = ["cli"]

@@ -26,6 +26,9 @@ jobs:
       - name: Build WASM
         run: make build
 
+      - name: Debug - List Dist
+        run: ls -R dist || echo "Dist not found"
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:

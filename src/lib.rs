@@ -122,11 +122,11 @@ pub fn edit_apk_bytes(
             continue;
         }
 
-        // Handle native libraries (.so) - must be uncompressed and aligned
+        // Handle native libraries (.so) - must be uncompressed and page-aligned (4096)
         if file.name().ends_with(".so") {
             let options = zip::write::FileOptions::<ExtendedFileOptions>::default()
                 .compression_method(zip::CompressionMethod::Stored)
-                .with_alignment(4);
+                .with_alignment(4096);
             output_apk.start_file(file.name(), options)?;
             std::io::copy(&mut file, &mut output_apk)?;
             continue;

@@ -283,7 +283,7 @@ function ManifestEditor({ values, onChange, originalInfo, wasmModule, isMobile =
         <div className="grid gap-6 md:grid-cols-2">
           {fields.slice(0, 2).map((field) => (
             <div key={field.id} className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between h-5">
                 <Label htmlFor={field.id} className="flex items-center gap-2"><field.icon className="h-4 w-4 text-muted-foreground" />{field.label}</Label>
                 {field.showValidation && <Badge variant={field.isValid ? 'secondary' : 'destructive'} className="text-xs">{field.isValid ? <><Check className="h-3 w-3 mr-1" /> Valid</> : <><X className="h-3 w-3 mr-1" /> Invalid</>}</Badge>}
               </div>
@@ -473,7 +473,9 @@ function SigningOptions({ config, onChange, wasmModule, isMobile = false }: {
           <div className="space-y-4 pl-4 border-l-2 border-primary animate-in slide-in-from-top-2">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label>Keystore File</Label>
+                <div className="flex items-center justify-between h-5">
+                  <Label>Keystore File</Label>
+                </div>
                 <input ref={fileInputRef} type="file" accept=".keystore,.jks,.p12,.pfx" onChange={handleKeystoreFile} className="hidden" />
                 <Button variant="outline" className="w-full justify-start" onClick={() => fileInputRef.current?.click()}>
                   <Key className="h-4 w-4 mr-2" />
@@ -482,7 +484,7 @@ function SigningOptions({ config, onChange, wasmModule, isMobile = false }: {
                 <p className="text-xs text-muted-foreground">Supports .keystore, .jks, .p12, .pfx formats</p>
               </div>
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between h-5">
                   <Label>Store Password</Label>
                   {config.keystoreData && config.keystorePassword && (
                     <Badge variant={passwordValid === true ? 'secondary' : passwordValid === false ? 'destructive' : 'outline'}>
@@ -503,6 +505,7 @@ function SigningOptions({ config, onChange, wasmModule, isMobile = false }: {
                   placeholder="Enter keystore password"
                   disabled={!config.keystoreData}
                 />
+                <p className="text-xs text-muted-foreground">Key password is same as store password</p>
               </div>
             </div>
             {passwordValid && config.aliases.length > 0 && (

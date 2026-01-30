@@ -79,7 +79,7 @@
 
 /* Gradient text */
 .gradient-text {
-  @apply bg-gradient-to-r from-primary via-purple-500 to-primary bg-clip-text text-transparent;
+  @apply bg-gradient-to-r from-foreground via-slate-400 to-foreground bg-clip-text text-transparent;
   background-size: 200% auto;
   animation: gradient-shift 3s ease infinite;
 }

@@ -103,7 +103,7 @@ function Header({ version, isMobile = false }: { version: string | null; isMobil
             </div>
           </div>
           {version && <Badge variant="secondary" className="ml-2">v{version}</Badge>}
-          <Badge className="bg-gradient-to-r from-primary to-purple-500 text-primary-foreground">Rust + WASM</Badge>
+          <Badge className="bg-gradient-to-r from-slate-600 to-zinc-500 text-white dark:from-slate-400 dark:to-zinc-300 dark:text-slate-900">Rust + WASM</Badge>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild>

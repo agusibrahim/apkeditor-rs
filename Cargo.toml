@@ -31,7 +31,7 @@ rasn-pkix = "0.6"
 apk-info-axml = "1.0.9"
 winnow = "0.6"
 base64 = "0.22"
-p12-keystore = { path = "./p12-keystore-main" }
+jks = { version = "0.3.3", default-features = false, features = ["wasm", "pkcs12"] }
 getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom02 = { package = "getrandom", version = "0.2", features = ["js"] }
 

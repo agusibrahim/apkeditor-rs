@@ -168,43 +168,94 @@ pub fn edit_apk_bytes(
     Ok(signed_apk)
 }
 
-// Helper to convert P12 to PEM string
-fn convert_p12_to_pem(p12_data: &[u8], password: &str) -> Result<String> {
-    use p12_keystore::KeyStore;
+// Helper to convert keystore (JKS or P12) to PEM string
+fn convert_keystore_to_pem(
+    keystore_data: &[u8],
+    store_password: &str,
+    alias: Option<&str>,
+    key_password: Option<&str>,
+) -> Result<String> {
+    use jks::KeyStore;
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-    use std::fmt::Write; // for write! macro
+    use std::fmt::Write;
+    use std::io::Cursor;
 
-    let keystore = KeyStore::from_pkcs12(p12_data, password)
-        .map_err(|e| anyhow::anyhow!("Failed to parse P12: {:?}", e))?;
-    
-    // Find first private key
-    let (_, chain) = keystore.private_key_chain()
-        .ok_or_else(|| anyhow::anyhow!("No private key found in keystore"))?;
-    
+    let mut ks = KeyStore::new();
+    let mut cursor = Cursor::new(keystore_data);
+
+    ks.load_auto_detect(&mut cursor, store_password.as_bytes())
+        .map_err(|e| anyhow::anyhow!("Failed to load keystore: {:?}", e))?;
+
+    // Use provided alias or find first private key alias
+    let key_alias = if let Some(a) = alias {
+        if !ks.is_private_key_entry(a) {
+            return Err(anyhow::anyhow!("Alias '{}' is not a private key entry", a));
+        }
+        a.to_string()
+    } else {
+        ks.aliases()
+            .into_iter()
+            .find(|a| ks.is_private_key_entry(a))
+            .ok_or_else(|| anyhow::anyhow!("No private key found in keystore"))?
+    };
+
+    // Use key password if provided, otherwise fall back to store password
+    let key_pass = key_password.unwrap_or(store_password);
+
+    // Try to get private key entry - first with password (JKS), then raw (PKCS12)
+    let entry = match ks.get_private_key_entry(&key_alias, key_pass.as_bytes()) {
+        Ok(e) => e,
+        Err(_) => {
+            // PKCS12 format - key is already decrypted, use raw extraction
+            ks.get_raw_private_key_entry(&key_alias)
+                .map_err(|e| anyhow::anyhow!("Failed to extract private key: {:?}", e))?
+        }
+    };
+
     let mut pem = String::new();
-    
+
     // Write certificate chain
-    for cert in chain.certs() {
+    for cert in &entry.certificate_chain {
         writeln!(&mut pem, "-----BEGIN CERTIFICATE-----")?;
-        // Base64 encode the DER bytes
-        let b64 = BASE64.encode(cert.as_der());
-        // Wrap lines at 64 chars
+        let b64 = BASE64.encode(&cert.content);
         for chunk in b64.as_bytes().chunks(64) {
-             writeln!(&mut pem, "{}", std::str::from_utf8(chunk)?)?;
+            writeln!(&mut pem, "{}", std::str::from_utf8(chunk)?)?;
         }
         writeln!(&mut pem, "-----END CERTIFICATE-----")?;
     }
-    
-    // Write private key
-    // chain.key is PKCS#8 DER bytes
+
+    // Write private key (PKCS#8 DER format)
     writeln!(&mut pem, "-----BEGIN PRIVATE KEY-----")?;
-    let b64 = BASE64.encode(chain.key().as_der());
+    let b64 = BASE64.encode(&entry.private_key);
     for chunk in b64.as_bytes().chunks(64) {
-         writeln!(&mut pem, "{}", std::str::from_utf8(chunk)?)?;
+        writeln!(&mut pem, "{}", std::str::from_utf8(chunk)?)?;
     }
     writeln!(&mut pem, "-----END PRIVATE KEY-----")?;
-    
+
     Ok(pem)
+}
+
+/// Get list of private key aliases from keystore
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn get_keystore_aliases(keystore_data: &[u8], password: &str) -> js_sys::Array {
+    use jks::KeyStore;
+    use std::io::Cursor;
+
+    let result = js_sys::Array::new();
+
+    let mut ks = KeyStore::new();
+    let mut cursor = Cursor::new(keystore_data);
+
+    if ks.load_auto_detect(&mut cursor, password.as_bytes()).is_ok() {
+        for alias in ks.aliases() {
+            if ks.is_private_key_entry(&alias) {
+                result.push(&wasm_bindgen::JsValue::from_str(&alias));
+            }
+        }
+    }
+
+    result
 }
 
 // ============ WASM Bindings ============
@@ -246,7 +297,7 @@ pub fn edit_apk(
     }
 }
 
-/// Edit and sign an APK file from JavaScript with CUSTOM P12 keystore
+/// Edit and sign an APK file from JavaScript with CUSTOM keystore (JKS or P12)
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn edit_apk_with_keystore(
@@ -255,12 +306,19 @@ pub fn edit_apk_with_keystore(
     app_name: Option<String>,
     version_code: Option<u32>,
     version_name: Option<String>,
-    p12_data: &[u8],
-    p12_password: &str,
+    keystore_data: &[u8],
+    store_password: &str,
+    key_alias: Option<String>,
+    key_password: Option<String>,
 ) -> ApkEditResult {
-    // Convert P12 to PEM
-    let pem_result = convert_p12_to_pem(p12_data, p12_password);
-    
+    // Convert keystore (JKS or P12) to PEM
+    let pem_result = convert_keystore_to_pem(
+        keystore_data,
+        store_password,
+        key_alias.as_deref(),
+        key_password.as_deref(),
+    );
+
     if let Err(e) = pem_result {
          return ApkEditResult {
             data: Vec::new(),
@@ -271,8 +329,8 @@ pub fn edit_apk_with_keystore(
     let pem = pem_result.unwrap();
 
     match edit_apk_bytes(
-        apk_data, 
-        package_name.as_deref(), 
+        apk_data,
+        package_name.as_deref(),
         app_name.as_deref(),
         version_code,
         version_name.as_deref(),
@@ -291,45 +349,39 @@ pub fn edit_apk_with_keystore(
     }
 }
 
-/// Edit and sign an APK file from JavaScript with PEM string (no password)
+/// Verify if key password is correct for a specific alias
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
-pub fn edit_apk_with_pem(
-    apk_data: &[u8],
-    package_name: Option<String>,
-    app_name: Option<String>,
-    version_code: Option<u32>,
-    version_name: Option<String>,
-    pem_string: &str,
-) -> ApkEditResult {
-    match edit_apk_bytes(
-        apk_data, 
-        package_name.as_deref(), 
-        app_name.as_deref(),
-        version_code,
-        version_name.as_deref(),
-        Some(pem_string),
-    ) {
-        Ok(data) => ApkEditResult {
-            data,
-            success: true,
-            error_message: String::new(),
-        },
-        Err(e) => ApkEditResult {
-            data: Vec::new(),
-            success: false,
-            error_message: e.to_string(),
-        },
+pub fn verify_key_password(keystore_data: &[u8], store_password: &str, alias: &str, key_password: &str) -> bool {
+    use jks::KeyStore;
+    use std::io::Cursor;
+
+    let mut ks = KeyStore::new();
+    let mut cursor = Cursor::new(keystore_data);
+
+    if ks.load_auto_detect(&mut cursor, store_password.as_bytes()).is_err() {
+        return false;
     }
+
+    // Try to decrypt with key password first (JKS format)
+    if ks.get_private_key_entry(alias, key_password.as_bytes()).is_ok() {
+        return true;
+    }
+
+    // PKCS12 format - key is already decrypted, use raw extraction
+    ks.get_raw_private_key_entry(alias).is_ok()
 }
 
-/// Verify if the password is correct for the given P12 keystore data
+/// Verify if the password is correct for the given keystore data (JKS or P12)
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
-pub fn verify_keystore_password(p12_data: &[u8], password: &str) -> bool {
-    use p12_keystore::KeyStore;
-    // Attempt to open the keystore. If it succeeds, the password is correct.
-    KeyStore::from_pkcs12(p12_data, password).is_ok()
+pub fn verify_keystore_password(keystore_data: &[u8], password: &str) -> bool {
+    use jks::KeyStore;
+    use std::io::Cursor;
+
+    let mut ks = KeyStore::new();
+    let mut cursor = Cursor::new(keystore_data);
+    ks.load_auto_detect(&mut cursor, password.as_bytes()).is_ok()
 }
 
 /// Validate a package name

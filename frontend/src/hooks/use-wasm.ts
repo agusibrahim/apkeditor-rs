@@ -2,8 +2,9 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import init, {
   edit_apk,
   edit_apk_with_keystore,
-  edit_apk_with_pem,
   verify_keystore_password,
+  verify_key_password,
+  get_keystore_aliases,
   validate_package_name,
   get_version,
   init_panic_hook,
@@ -31,9 +32,10 @@ export interface EditResult {
 
 export interface WasmModule {
   edit_apk: (data: Uint8Array, packageName: string | null, appName: string | null, versionCode: number | null, versionName: string | null) => EditResult;
-  edit_apk_with_keystore: (data: Uint8Array, packageName: string | null, appName: string | null, versionCode: number | null, versionName: string | null, keystoreData: Uint8Array, password: string) => EditResult;
-  edit_apk_with_pem: (data: Uint8Array, packageName: string | null, appName: string | null, versionCode: number | null, versionName: string | null, pemString: string) => EditResult;
+  edit_apk_with_keystore: (data: Uint8Array, packageName: string | null, appName: string | null, versionCode: number | null, versionName: string | null, keystoreData: Uint8Array, storePassword: string, keyAlias: string | null, keyPassword: string | null) => EditResult;
   verify_keystore_password: (data: Uint8Array, password: string) => boolean;
+  verify_key_password: (data: Uint8Array, storePassword: string, alias: string, keyPassword: string) => boolean;
+  get_keystore_aliases: (data: Uint8Array, password: string) => string[];
   validate_package_name: (name: string) => boolean;
   get_version: () => string;
   init_panic_hook: () => void;
@@ -84,15 +86,13 @@ async function loadWasmModule(): Promise<WasmModule> {
       const result = edit_apk(data, packageName, appName, versionCode, versionName);
       return wrapEditResult(result);
     },
-    edit_apk_with_keystore: (data, packageName, appName, versionCode, versionName, keystoreData, password) => {
-      const result = edit_apk_with_keystore(data, packageName, appName, versionCode, versionName, keystoreData, password);
-      return wrapEditResult(result);
-    },
-    edit_apk_with_pem: (data, packageName, appName, versionCode, versionName, pemString) => {
-      const result = edit_apk_with_pem(data, packageName, appName, versionCode, versionName, pemString);
+    edit_apk_with_keystore: (data, packageName, appName, versionCode, versionName, keystoreData, storePassword, keyAlias, keyPassword) => {
+      const result = edit_apk_with_keystore(data, packageName, appName, versionCode, versionName, keystoreData, storePassword, keyAlias, keyPassword);
       return wrapEditResult(result);
     },
     verify_keystore_password,
+    verify_key_password,
+    get_keystore_aliases: (data, password) => Array.from(get_keystore_aliases(data, password)),
     validate_package_name,
     get_version,
     init_panic_hook,

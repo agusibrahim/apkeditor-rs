@@ -6,11 +6,9 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   Upload, FileArchive, X, Loader2, Pencil, Package, Type, Hash, Tag,
-  Lock, Bot, Key, FileText, Check, HelpCircle, ChevronDown, ChevronUp,
-  Sparkles, AlertCircle, Smartphone, Moon, Sun, Monitor, Github, Shield, Zap
+  Lock, Key, Check, Sparkles, AlertCircle, Smartphone, Moon, Sun, Monitor, Github, Shield, Zap
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -25,7 +23,6 @@ import { useWasm, useApk, type WasmModule, type ApkFile, type ApkInfo } from '@/
 
 // ============ TYPES ============
 type Theme = 'light' | 'dark' | 'system';
-type SigningMode = 'debug' | 'p12' | 'pem';
 
 interface ManifestValues {
   packageName: string;
@@ -35,10 +32,13 @@ interface ManifestValues {
 }
 
 interface SigningConfig {
-  mode: SigningMode;
+  useCustomKey: boolean;
   keystoreData: Uint8Array | null;
   keystorePassword: string;
-  pemContent: string;
+  keystoreFileName: string;
+  aliases: string[];
+  selectedAlias: string;
+  keyPassword: string;
 }
 
 // ============ UTILITIES ============
@@ -319,73 +319,180 @@ function SigningOptions({ config, onChange, wasmModule, isMobile = false }: {
   isMobile?: boolean;
 }) {
   const [passwordValid, setPasswordValid] = useState<boolean | null>(null);
-  const [showHelp, setShowHelp] = useState(false);
-
-  const handleModeChange = (mode: SigningMode) => { onChange({ ...config, mode }); setPasswordValid(null); };
+  const [keyPasswordValid, setKeyPasswordValid] = useState<boolean | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+  const [isValidatingKeyPassword, setIsValidatingKeyPassword] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleKeystoreFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const buffer = await file.arrayBuffer();
-    onChange({ ...config, keystoreData: new Uint8Array(buffer) });
+    onChange({
+      ...config,
+      keystoreData: new Uint8Array(buffer),
+      keystoreFileName: file.name,
+      aliases: [],
+      selectedAlias: '',
+      keyPassword: '',
+    });
     setPasswordValid(null);
+    setKeyPasswordValid(null);
   };
 
-  const handlePemFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const text = await file.text();
-    onChange({ ...config, pemContent: text });
-  };
-
+  // Validate store password and fetch aliases when typing (debounced)
   useEffect(() => {
-    if (!wasmModule || !config.keystoreData || !config.keystorePassword) { setPasswordValid(null); return; }
+    if (!wasmModule || !config.keystoreData || !config.keystorePassword) {
+      setPasswordValid(null);
+      if (config.aliases.length > 0) {
+        onChange({ ...config, aliases: [], selectedAlias: '', keyPassword: '' });
+      }
+      return;
+    }
+    setIsValidating(true);
     const timeoutId = setTimeout(() => {
-      try { setPasswordValid(wasmModule.verify_keystore_password(config.keystoreData!, config.keystorePassword)); }
-      catch { setPasswordValid(false); }
+      try {
+        const isValid = wasmModule.verify_keystore_password(config.keystoreData!, config.keystorePassword);
+        setPasswordValid(isValid);
+        if (isValid) {
+          // Fetch aliases
+          const aliases = wasmModule.get_keystore_aliases(config.keystoreData!, config.keystorePassword);
+          const firstAlias = aliases.length > 0 ? aliases[0] : '';
+          onChange({
+            ...config,
+            aliases,
+            selectedAlias: firstAlias,
+            keyPassword: config.keystorePassword, // Default key password to store password
+          });
+        } else {
+          onChange({ ...config, aliases: [], selectedAlias: '', keyPassword: '' });
+        }
+      } catch {
+        setPasswordValid(false);
+        onChange({ ...config, aliases: [], selectedAlias: '', keyPassword: '' });
+      }
+      setIsValidating(false);
     }, 300);
     return () => clearTimeout(timeoutId);
   }, [config.keystoreData, config.keystorePassword, wasmModule]);
 
-  const signingModes = [
-    { value: 'debug' as const, icon: Bot, label: 'Debug Key', description: 'Default v2 Sign' },
-    { value: 'p12' as const, icon: Key, label: 'Keystore', description: '.p12 / .pfx' },
-    { value: 'pem' as const, icon: FileText, label: 'PEM File', description: 'No Password' },
-  ];
+  // Validate key password when typing (debounced)
+  useEffect(() => {
+    if (!wasmModule || !config.keystoreData || !config.selectedAlias || !config.keyPassword || !passwordValid) {
+      setKeyPasswordValid(null);
+      return;
+    }
+    setIsValidatingKeyPassword(true);
+    const timeoutId = setTimeout(() => {
+      try {
+        setKeyPasswordValid(wasmModule.verify_key_password(config.keystoreData!, config.keystorePassword, config.selectedAlias, config.keyPassword));
+      } catch {
+        setKeyPasswordValid(false);
+      }
+      setIsValidatingKeyPassword(false);
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [config.keystoreData, config.keystorePassword, config.selectedAlias, config.keyPassword, wasmModule, passwordValid]);
 
-  const HelpContent = () => (
-    <div className="space-y-4 text-sm">
-      <div><p className="font-semibold mb-2">Convert JKS to P12:</p><code className="block bg-muted p-3 rounded-md font-mono text-xs overflow-x-auto">keytool -importkeystore -srckeystore app.jks -destkeystore app.p12 -deststoretype PKCS12</code></div>
-      <div><p className="font-semibold mb-2">Convert P12 to PEM:</p><code className="block bg-muted p-3 rounded-md font-mono text-xs overflow-x-auto">openssl pkcs12 -in app.p12 -nodes -out app.pem</code></div>
-    </div>
-  );
+  const handleToggleCustomKey = () => {
+    onChange({
+      ...config,
+      useCustomKey: !config.useCustomKey,
+      keystoreData: null,
+      keystorePassword: '',
+      keystoreFileName: '',
+      aliases: [],
+      selectedAlias: '',
+      keyPassword: '',
+    });
+    setPasswordValid(null);
+    setKeyPasswordValid(null);
+  };
 
   if (isMobile) {
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-3 gap-2">
-          {signingModes.map((mode) => (
-            <button key={mode.value} onClick={() => handleModeChange(mode.value)} className={cn("flex flex-col items-center gap-1 p-3 rounded-lg border transition-all", config.mode === mode.value ? "border-primary bg-primary/10" : "border-border bg-muted/30")}>
-              <mode.icon className={cn("h-5 w-5", config.mode === mode.value ? "text-primary" : "text-muted-foreground")} />
-              <span className="text-xs font-medium">{mode.label}</span>
-            </button>
-          ))}
-        </div>
-        {config.mode === 'p12' && (
-          <div className="space-y-3 pl-3 border-l-2 border-primary animate-in slide-in-from-top-2">
-            <div className="space-y-2"><Label>Keystore File</Label><Input type="file" accept=".p12,.pfx" onChange={handleKeystoreFile} className="h-11" /></div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between"><Label>Password</Label>{passwordValid !== null && <Badge variant={passwordValid ? 'secondary' : 'destructive'} className="text-xs">{passwordValid ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}</Badge>}</div>
-              <Input type="password" value={config.keystorePassword} onChange={(e) => onChange({ ...config, keystorePassword: e.target.value })} placeholder="Enter keystore password" className="h-11" />
+        <label className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/30 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={config.useCustomKey}
+            onChange={handleToggleCustomKey}
+            className="h-5 w-5 rounded border-primary text-primary focus:ring-primary"
+          />
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <Key className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium">Use Custom Keystore</span>
             </div>
+            <p className="text-xs text-muted-foreground mt-0.5">Sign with your own .keystore, .jks, or .p12 file</p>
+          </div>
+        </label>
+
+        {config.useCustomKey && (
+          <div className="space-y-3 pl-3 border-l-2 border-primary animate-in slide-in-from-top-2">
+            <div className="space-y-2">
+              <Label>Keystore File</Label>
+              <input ref={fileInputRef} type="file" accept=".keystore,.jks,.p12,.pfx" onChange={handleKeystoreFile} className="hidden" />
+              <Button variant="outline" className="w-full h-11 justify-start" onClick={() => fileInputRef.current?.click()}>
+                <Key className="h-4 w-4 mr-2" />
+                {config.keystoreFileName || 'Select keystore file...'}
+              </Button>
+              <p className="text-xs text-muted-foreground">Supports .keystore, .jks, .p12, .pfx</p>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Store Password</Label>
+                {config.keystoreData && config.keystorePassword && (
+                  <Badge variant={passwordValid === true ? 'secondary' : passwordValid === false ? 'destructive' : 'outline'} className="text-xs">
+                    {isValidating ? <Loader2 className="h-3 w-3 animate-spin" /> : passwordValid ? <Check className="h-3 w-3" /> : passwordValid === false ? <X className="h-3 w-3" /> : null}
+                  </Badge>
+                )}
+              </div>
+              <Input
+                type="password"
+                value={config.keystorePassword}
+                onChange={(e) => onChange({ ...config, keystorePassword: e.target.value })}
+                placeholder="Enter keystore password"
+                className="h-11"
+                disabled={!config.keystoreData}
+              />
+            </div>
+            {passwordValid && config.aliases.length > 0 && (
+              <>
+                <div className="space-y-2">
+                  <Label>Key Alias</Label>
+                  <select
+                    value={config.selectedAlias}
+                    onChange={(e) => onChange({ ...config, selectedAlias: e.target.value })}
+                    className="w-full h-11 px-3 rounded-md border border-input bg-background text-sm"
+                  >
+                    {config.aliases.map((alias) => (
+                      <option key={alias} value={alias}>{alias}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Key Password</Label>
+                    {config.keyPassword && (
+                      <Badge variant={keyPasswordValid === true ? 'secondary' : keyPasswordValid === false ? 'destructive' : 'outline'} className="text-xs">
+                        {isValidatingKeyPassword ? <Loader2 className="h-3 w-3 animate-spin" /> : keyPasswordValid ? <Check className="h-3 w-3" /> : keyPasswordValid === false ? <X className="h-3 w-3" /> : null}
+                      </Badge>
+                    )}
+                  </div>
+                  <Input
+                    type="password"
+                    value={config.keyPassword}
+                    onChange={(e) => onChange({ ...config, keyPassword: e.target.value })}
+                    placeholder="Enter key password (often same as store)"
+                    className="h-11"
+                  />
+                  <p className="text-xs text-muted-foreground">Usually the same as store password</p>
+                </div>
+              </>
+            )}
           </div>
         )}
-        {config.mode === 'pem' && (
-          <div className="space-y-3 pl-3 border-l-2 border-yellow-500 animate-in slide-in-from-top-2">
-            <div className="space-y-2"><Label>PEM File</Label><Input type="file" accept=".pem,.pk8,.key" onChange={handlePemFile} className="h-11" /><p className="text-xs text-muted-foreground">File must contain both PRIVATE KEY and CERTIFICATE.</p></div>
-          </div>
-        )}
-        <Dialog><DialogTrigger asChild><Button variant="ghost" size="sm" className="w-full"><HelpCircle className="h-4 w-4 mr-2" />How to convert keys?</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>Key Conversion Guide</DialogTitle><DialogDescription>Commands to convert your signing keys</DialogDescription></DialogHeader><HelpContent /></DialogContent></Dialog>
       </div>
     );
   }
@@ -393,35 +500,108 @@ function SigningOptions({ config, onChange, wasmModule, isMobile = false }: {
   return (
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Lock className="h-5 w-5 text-primary" />Signing Options</CardTitle></CardHeader>
-      <CardContent className="space-y-6">
-        <div className="grid grid-cols-3 gap-4">
-          {signingModes.map((mode) => (
-            <Label key={mode.value} htmlFor={mode.value} className={cn("flex flex-col items-center gap-2 p-4 rounded-lg border-2 cursor-pointer transition-all", config.mode === mode.value ? "border-primary bg-primary/5" : "border-border hover:border-primary/50")} onClick={() => handleModeChange(mode.value)}>
-              <mode.icon className={cn("h-8 w-8", config.mode === mode.value ? "text-primary" : "text-muted-foreground")} />
-              <div className="text-center"><p className="font-semibold">{mode.label}</p><p className="text-xs text-muted-foreground">{mode.description}</p></div>
-            </Label>
-          ))}
-        </div>
-        {config.mode === 'p12' && (
+      <CardContent className="space-y-4">
+        <label className="flex items-center gap-4 p-4 rounded-lg border-2 border-border hover:border-primary/50 cursor-pointer transition-all">
+          <input
+            type="checkbox"
+            checked={config.useCustomKey}
+            onChange={handleToggleCustomKey}
+            className="h-5 w-5 rounded border-primary text-primary focus:ring-primary"
+          />
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <Key className="h-5 w-5 text-muted-foreground" />
+              <span className="font-semibold">Use Custom Keystore</span>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">Sign with your own .keystore, .jks, or .p12 file instead of the debug key</p>
+          </div>
+        </label>
+
+        {config.useCustomKey && (
           <div className="space-y-4 pl-4 border-l-2 border-primary animate-in slide-in-from-top-2">
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2"><Label>Keystore File</Label><Input type="file" accept=".p12,.pfx" onChange={handleKeystoreFile} /></div>
               <div className="space-y-2">
-                <div className="flex items-center justify-between"><Label>Keystore Password</Label>{passwordValid !== null && <Badge variant={passwordValid ? 'secondary' : 'destructive'}>{passwordValid ? <><Check className="h-3 w-3 mr-1" /> Valid</> : <><X className="h-3 w-3 mr-1" /> Invalid</>}</Badge>}</div>
-                <Input type="password" value={config.keystorePassword} onChange={(e) => onChange({ ...config, keystorePassword: e.target.value })} placeholder="Enter keystore password" />
+                <Label>Keystore File</Label>
+                <input ref={fileInputRef} type="file" accept=".keystore,.jks,.p12,.pfx" onChange={handleKeystoreFile} className="hidden" />
+                <Button variant="outline" className="w-full justify-start" onClick={() => fileInputRef.current?.click()}>
+                  <Key className="h-4 w-4 mr-2" />
+                  {config.keystoreFileName || 'Select keystore file...'}
+                </Button>
+                <p className="text-xs text-muted-foreground">Supports .keystore, .jks, .p12, .pfx formats</p>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Store Password</Label>
+                  {config.keystoreData && config.keystorePassword && (
+                    <Badge variant={passwordValid === true ? 'secondary' : passwordValid === false ? 'destructive' : 'outline'}>
+                      {isValidating ? (
+                        <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Checking...</>
+                      ) : passwordValid ? (
+                        <><Check className="h-3 w-3 mr-1" /> Valid</>
+                      ) : passwordValid === false ? (
+                        <><X className="h-3 w-3 mr-1" /> Invalid</>
+                      ) : null}
+                    </Badge>
+                  )}
+                </div>
+                <Input
+                  type="password"
+                  value={config.keystorePassword}
+                  onChange={(e) => onChange({ ...config, keystorePassword: e.target.value })}
+                  placeholder="Enter keystore password"
+                  disabled={!config.keystoreData}
+                />
               </div>
             </div>
+            {passwordValid && config.aliases.length > 0 && (
+              <div className="grid gap-4 md:grid-cols-2 animate-in slide-in-from-top-2">
+                <div className="space-y-2">
+                  <Label>Key Alias</Label>
+                  <select
+                    value={config.selectedAlias}
+                    onChange={(e) => onChange({ ...config, selectedAlias: e.target.value })}
+                    className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    {config.aliases.map((alias) => (
+                      <option key={alias} value={alias}>{alias}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">Select the key to use for signing</p>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Key Password</Label>
+                    {config.keyPassword && (
+                      <Badge variant={keyPasswordValid === true ? 'secondary' : keyPasswordValid === false ? 'destructive' : 'outline'}>
+                        {isValidatingKeyPassword ? (
+                          <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Checking...</>
+                        ) : keyPasswordValid ? (
+                          <><Check className="h-3 w-3 mr-1" /> Valid</>
+                        ) : keyPasswordValid === false ? (
+                          <><X className="h-3 w-3 mr-1" /> Invalid</>
+                        ) : null}
+                      </Badge>
+                    )}
+                  </div>
+                  <Input
+                    type="password"
+                    value={config.keyPassword}
+                    onChange={(e) => onChange({ ...config, keyPassword: e.target.value })}
+                    placeholder="Enter key password"
+                  />
+                  <p className="text-xs text-muted-foreground">Usually the same as store password</p>
+                </div>
+              </div>
+            )}
           </div>
         )}
-        {config.mode === 'pem' && (
-          <div className="space-y-4 pl-4 border-l-2 border-yellow-500 animate-in slide-in-from-top-2">
-            <div className="space-y-2"><Label>PEM File</Label><Input type="file" accept=".pem,.pk8,.key" onChange={handlePemFile} /><p className="text-xs text-muted-foreground">File must contain both PRIVATE KEY and CERTIFICATE.</p></div>
+
+        {!config.useCustomKey && (
+          <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg text-sm text-muted-foreground">
+            <Shield className="h-4 w-4 text-green-500" />
+            <span>APK will be signed with the default debug key (APK Signature Scheme v2)</span>
           </div>
         )}
-        <div className="border-t pt-4">
-          <button onClick={() => setShowHelp(!showHelp)} className="flex items-center gap-2 text-sm text-primary hover:underline"><HelpCircle className="h-4 w-4" />How to convert keys?{showHelp ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>
-          {showHelp && <div className="mt-4 p-4 bg-muted/50 rounded-lg animate-in slide-in-from-top-2"><HelpContent /></div>}
-        </div>
       </CardContent>
     </Card>
   );
@@ -473,7 +653,7 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [manifestValues, setManifestValues] = useState<ManifestValues>({ packageName: '', appName: '', versionCode: '', versionName: '' });
-  const [signingConfig, setSigningConfig] = useState<SigningConfig>({ mode: 'debug', keystoreData: null, keystorePassword: '', pemContent: '' });
+  const [signingConfig, setSigningConfig] = useState<SigningConfig>({ useCustomKey: false, keystoreData: null, keystorePassword: '', keystoreFileName: '', aliases: [], selectedAlias: '', keyPassword: '' });
 
   useEffect(() => {
     if (apk?.info?.success) {
@@ -496,10 +676,12 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
 
     if (!packageName && !appName && !versionCode && !versionName) { toast.error('Please enter at least one property to edit'); return; }
     if (packageName && !wasmModule.validate_package_name(packageName)) { toast.error('Invalid package name format'); return; }
-    if (signingConfig.mode === 'p12') {
-      if (!signingConfig.keystoreData) { toast.error('Please upload a .p12 keystore file'); return; }
-      if (!wasmModule.verify_keystore_password(signingConfig.keystoreData, signingConfig.keystorePassword)) { toast.error('Invalid keystore password'); return; }
-    } else if (signingConfig.mode === 'pem' && !signingConfig.pemContent) { toast.error('Please upload a PEM file'); return; }
+    if (signingConfig.useCustomKey) {
+      if (!signingConfig.keystoreData) { toast.error('Please upload a keystore file'); return; }
+      if (!wasmModule.verify_keystore_password(signingConfig.keystoreData, signingConfig.keystorePassword)) { toast.error('Invalid store password'); return; }
+      if (!signingConfig.selectedAlias) { toast.error('No key alias selected'); return; }
+      if (!signingConfig.keyPassword) { toast.error('Please enter key password'); return; }
+    }
 
     setIsProcessing(true);
     setProgress(10);
@@ -507,9 +689,21 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
     try {
       setProgress(30);
       let result;
-      if (signingConfig.mode === 'p12') result = wasmModule.edit_apk_with_keystore(apk.data, packageName, appName, versionCode, versionName, signingConfig.keystoreData!, signingConfig.keystorePassword);
-      else if (signingConfig.mode === 'pem') result = wasmModule.edit_apk_with_pem(apk.data, packageName, appName, versionCode, versionName, signingConfig.pemContent);
-      else result = wasmModule.edit_apk(apk.data, packageName, appName, versionCode, versionName);
+      if (signingConfig.useCustomKey && signingConfig.keystoreData) {
+        result = wasmModule.edit_apk_with_keystore(
+          apk.data,
+          packageName,
+          appName,
+          versionCode,
+          versionName,
+          signingConfig.keystoreData,
+          signingConfig.keystorePassword,
+          signingConfig.selectedAlias || null,
+          signingConfig.keyPassword || null
+        );
+      } else {
+        result = wasmModule.edit_apk(apk.data, packageName, appName, versionCode, versionName);
+      }
 
       setProgress(80);
 
@@ -525,7 +719,7 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         setProgress(100);
-        toast.success('APK edited successfully!', { description: `Signed with: ${signingConfig.mode === 'p12' ? 'Custom Keystore' : signingConfig.mode === 'pem' ? 'PEM File' : 'Debug Key'}` });
+        toast.success('APK edited successfully!', { description: `Signed with: ${signingConfig.useCustomKey ? `Custom Keystore (${signingConfig.selectedAlias})` : 'Debug Key'}` });
       } else {
         toast.error('Error processing APK', { description: result.error_message });
       }

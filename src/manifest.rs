@@ -24,18 +24,59 @@ pub fn edit_manifest(manifest: &[u8], options: &ManifestEditOptions) -> Result<V
     let Chunk::StringPool(strings, _) = string_pool else {
         anyhow::bail!("Annoying....");
     };
-    
+
     // Change package name
     if let Some(pkgname) = options.package_name {
         let old_pkgname =
             edit_attr_in_element(chunks, "manifest", "package", pkgname.to_owned(), strings)?
                 .with_context(|| "There is no package name in manifest.")?;
 
-        // Replace ALL occurrences of old package name in string pool
-        // This fixes permissions, providers, and any other references
+        // Replace package name in string pool.
+        //
+        // Strategy: Replace ALL occurrences EXCEPT class names.
+        // Class names are identified by:
+        // - Having a segment after package that starts with uppercase
+        // - AND that segment is CamelCase (not ALL_CAPS like PERMISSION_NAME)
+        //
+        // Examples that SHOULD be replaced:
+        // - "com.example.app" (exact match)
+        // - "com.example.app.permission.SOMETHING" (permission)
+        // - "com.example.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" (ALL_CAPS = permission)
+        // - "com.example.app.provider" (provider authority)
+        // - "com.example.app.fileprovider" (file provider)
+        //
+        // Examples that should NOT be replaced (class names):
+        // - "com.example.app.MainActivity" (CamelCase class)
+        // - "com.example.app.MyApplication" (CamelCase class)
+        // - "com.example.app.services.MyService" (CamelCase class in subpackage)
         for string in strings.iter_mut() {
-            if string.contains(&old_pkgname) {
-                *string = string.replace(&old_pkgname, pkgname);
+            // Skip if doesn't contain old package name
+            if !string.contains(&old_pkgname) {
+                continue;
+            }
+
+            // Exact match - always replace
+            if string == &old_pkgname {
+                *string = pkgname.to_string();
+                continue;
+            }
+
+            // Check suffix after package name
+            let after_pkg = string.strip_prefix(&old_pkgname);
+            if let Some(suffix) = after_pkg {
+                if suffix.starts_with('.') {
+                    // Check if this looks like a class name
+                    // Class names are CamelCase (e.g., "MainActivity", "MyService")
+                    // NOT ALL_CAPS (e.g., "PERMISSION_NAME")
+                    // NOT lowercase (e.g., "provider", "permission")
+                    if is_class_name_suffix(suffix) {
+                        // This is a class name - DON'T replace
+                        continue;
+                    }
+
+                    // Not a class name - replace the package name
+                    *string = string.replace(&old_pkgname, pkgname);
+                }
             }
         }
     }
@@ -167,6 +208,56 @@ fn get_attribute_value(attrs: &[ResXmlAttribute], name: &str, pool: &[String]) -
         .iter()
         .find(|a| attr_has_name(a.name, name, pool))
         .map(|a| a.typed_value)
+}
+
+/// Check if suffix looks like a class name path.
+///
+/// Class names in Android are CamelCase (e.g., "MainActivity", "MyService").
+/// This function returns true if the suffix contains a CamelCase class name.
+///
+/// Returns true (IS class name) for:
+/// - ".MainActivity"
+/// - ".ui.MainActivity"
+/// - ".services.MyService"
+///
+/// Returns false (NOT class name) for:
+/// - ".PERMISSION_NAME" (ALL_CAPS - permission)
+/// - ".permission.READ_SOMETHING" (permission pattern)
+/// - ".provider" (lowercase - authority)
+/// - ".fileprovider" (lowercase - authority)
+fn is_class_name_suffix(suffix: &str) -> bool {
+    // Skip the leading dot
+    let path = &suffix[1..];
+
+    // Get all segments
+    let segments: Vec<&str> = path.split('.').collect();
+
+    // Check the LAST segment - this is where the class name would be
+    // e.g., "com.example.app.ui.MainActivity" -> check "MainActivity"
+    // e.g., "com.example.app.PERMISSION" -> check "PERMISSION"
+    if let Some(last_segment) = segments.last() {
+        if last_segment.is_empty() {
+            return false;
+        }
+
+        let first_char = last_segment.chars().next().unwrap();
+
+        // If starts with lowercase, definitely not a class name
+        if first_char.is_lowercase() {
+            return false;
+        }
+
+        // If starts with uppercase, check if it's CamelCase or ALL_CAPS
+        // CamelCase: has at least one lowercase letter (e.g., "MainActivity")
+        // ALL_CAPS: only uppercase and underscores (e.g., "PERMISSION_NAME")
+        let has_lowercase = last_segment.chars().any(|c| c.is_lowercase());
+
+        // If it has lowercase letters, it's CamelCase (class name)
+        // If it's ALL_CAPS (no lowercase), it's likely a permission/constant
+        return has_lowercase;
+    }
+
+    false
 }
 
 fn attr_has_name(index: i32, name: &str, string_pool: &[String]) -> bool {

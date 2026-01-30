@@ -1,4 +1,4 @@
-.PHONY: all build clean
+.PHONY: all build clean dev
 
 # Default target
 all: clean build
@@ -7,19 +7,26 @@ all: clean build
 build:
 	@echo "🦀 Building WASM module..."
 	wasm-pack build --target web --features wasm --no-default-features
-	@echo "📂 Preparing dist folder..."
-	mkdir -p dist
-	cp web/index.html dist/
-	cp web/manifest.json dist/
-	cp web/sw.js dist/
-	cp web/icon.svg dist/
-	cp -r web/styles.css dist/ 2>/dev/null || :
-	cp -r pkg dist/
-	@echo "✅ Build complete! Output in 'dist/'"
+	@echo "📦 Copying WASM to frontend..."
+	cp -r pkg frontend/src/wasm
+	@echo "📦 Installing frontend dependencies..."
+	cd frontend && bun install
+	@echo "🏗️ Building frontend..."
+	cd frontend && bun run build
+	@echo "✅ Build complete! Output in 'frontend/dist/'"
+
+# Development mode
+dev:
+	@echo "🦀 Building WASM module..."
+	wasm-pack build --target web --features wasm --no-default-features
+	@echo "📦 Copying WASM to frontend..."
+	cp -r pkg frontend/src/wasm
+	@echo "🚀 Starting dev server..."
+	cd frontend && bun run dev
 
 # Clean target
 clean:
 	@echo "🧹 Cleaning..."
-	rm -rf dist
+	rm -rf frontend/dist
+	rm -rf frontend/src/wasm
 	rm -rf pkg
-	rm -rf web/pkg

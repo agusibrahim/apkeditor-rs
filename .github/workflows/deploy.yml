@@ -31,15 +31,31 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build WASM
-        run: make build
+        run: wasm-pack build --target web --features wasm --no-default-features
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Copy WASM to frontend
+        run: cp -r pkg frontend/src/wasm
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: bun install
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: bun run build
 
       - name: Debug - List Dist
-        run: ls -R dist || echo "Dist not found"
+        run: ls -la frontend/dist
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./dist
+          path: ./frontend/dist
 
   deploy:
     environment:

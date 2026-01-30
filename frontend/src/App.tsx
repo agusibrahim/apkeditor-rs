@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Upload, FileArchive, X, Loader2, Pencil, Package, Type, Hash, Tag,
   Lock, Key, Check, Sparkles, AlertCircle, Smartphone, Moon, Sun, Monitor, Github, Shield, Zap
@@ -38,7 +39,6 @@ interface SigningConfig {
   keystoreFileName: string;
   aliases: string[];
   selectedAlias: string;
-  keyPassword: string;
 }
 
 // ============ UTILITIES ============
@@ -319,9 +319,7 @@ function SigningOptions({ config, onChange, wasmModule, isMobile = false }: {
   isMobile?: boolean;
 }) {
   const [passwordValid, setPasswordValid] = useState<boolean | null>(null);
-  const [keyPasswordValid, setKeyPasswordValid] = useState<boolean | null>(null);
   const [isValidating, setIsValidating] = useState(false);
-  const [isValidatingKeyPassword, setIsValidatingKeyPassword] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleKeystoreFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -334,10 +332,8 @@ function SigningOptions({ config, onChange, wasmModule, isMobile = false }: {
       keystoreFileName: file.name,
       aliases: [],
       selectedAlias: '',
-      keyPassword: '',
     });
     setPasswordValid(null);
-    setKeyPasswordValid(null);
   };
 
   // Validate store password and fetch aliases when typing (debounced)
@@ -345,7 +341,7 @@ function SigningOptions({ config, onChange, wasmModule, isMobile = false }: {
     if (!wasmModule || !config.keystoreData || !config.keystorePassword) {
       setPasswordValid(null);
       if (config.aliases.length > 0) {
-        onChange({ ...config, aliases: [], selectedAlias: '', keyPassword: '' });
+        onChange({ ...config, aliases: [], selectedAlias: '' });
       }
       return;
     }
@@ -362,62 +358,40 @@ function SigningOptions({ config, onChange, wasmModule, isMobile = false }: {
             ...config,
             aliases,
             selectedAlias: firstAlias,
-            keyPassword: config.keystorePassword, // Default key password to store password
           });
         } else {
-          onChange({ ...config, aliases: [], selectedAlias: '', keyPassword: '' });
+          onChange({ ...config, aliases: [], selectedAlias: '' });
         }
       } catch {
         setPasswordValid(false);
-        onChange({ ...config, aliases: [], selectedAlias: '', keyPassword: '' });
+        onChange({ ...config, aliases: [], selectedAlias: '' });
       }
       setIsValidating(false);
     }, 300);
     return () => clearTimeout(timeoutId);
   }, [config.keystoreData, config.keystorePassword, wasmModule]);
 
-  // Validate key password when typing (debounced)
-  useEffect(() => {
-    if (!wasmModule || !config.keystoreData || !config.selectedAlias || !config.keyPassword || !passwordValid) {
-      setKeyPasswordValid(null);
-      return;
-    }
-    setIsValidatingKeyPassword(true);
-    const timeoutId = setTimeout(() => {
-      try {
-        setKeyPasswordValid(wasmModule.verify_key_password(config.keystoreData!, config.keystorePassword, config.selectedAlias, config.keyPassword));
-      } catch {
-        setKeyPasswordValid(false);
-      }
-      setIsValidatingKeyPassword(false);
-    }, 300);
-    return () => clearTimeout(timeoutId);
-  }, [config.keystoreData, config.keystorePassword, config.selectedAlias, config.keyPassword, wasmModule, passwordValid]);
-
-  const handleToggleCustomKey = () => {
+  const handleToggleCustomKey = (checked: boolean | "indeterminate") => {
+    if (checked === "indeterminate") return;
     onChange({
       ...config,
-      useCustomKey: !config.useCustomKey,
+      useCustomKey: checked,
       keystoreData: null,
       keystorePassword: '',
       keystoreFileName: '',
       aliases: [],
       selectedAlias: '',
-      keyPassword: '',
     });
     setPasswordValid(null);
-    setKeyPasswordValid(null);
   };
 
   if (isMobile) {
     return (
       <div className="space-y-4">
         <label className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/30 cursor-pointer">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={config.useCustomKey}
-            onChange={handleToggleCustomKey}
-            className="h-5 w-5 rounded border-primary text-primary focus:ring-primary"
+            onCheckedChange={handleToggleCustomKey}
           />
           <div className="flex-1">
             <div className="flex items-center gap-2">
@@ -458,38 +432,18 @@ function SigningOptions({ config, onChange, wasmModule, isMobile = false }: {
               />
             </div>
             {passwordValid && config.aliases.length > 0 && (
-              <>
-                <div className="space-y-2">
-                  <Label>Key Alias</Label>
-                  <select
-                    value={config.selectedAlias}
-                    onChange={(e) => onChange({ ...config, selectedAlias: e.target.value })}
-                    className="w-full h-11 px-3 rounded-md border border-input bg-background text-sm"
-                  >
-                    {config.aliases.map((alias) => (
-                      <option key={alias} value={alias}>{alias}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>Key Password</Label>
-                    {config.keyPassword && (
-                      <Badge variant={keyPasswordValid === true ? 'secondary' : keyPasswordValid === false ? 'destructive' : 'outline'} className="text-xs">
-                        {isValidatingKeyPassword ? <Loader2 className="h-3 w-3 animate-spin" /> : keyPasswordValid ? <Check className="h-3 w-3" /> : keyPasswordValid === false ? <X className="h-3 w-3" /> : null}
-                      </Badge>
-                    )}
-                  </div>
-                  <Input
-                    type="password"
-                    value={config.keyPassword}
-                    onChange={(e) => onChange({ ...config, keyPassword: e.target.value })}
-                    placeholder="Enter key password (often same as store)"
-                    className="h-11"
-                  />
-                  <p className="text-xs text-muted-foreground">Usually the same as store password</p>
-                </div>
-              </>
+              <div className="space-y-2">
+                <Label>Key Alias</Label>
+                <select
+                  value={config.selectedAlias}
+                  onChange={(e) => onChange({ ...config, selectedAlias: e.target.value })}
+                  className="w-full h-11 px-3 rounded-md border border-input bg-background text-sm"
+                >
+                  {config.aliases.map((alias) => (
+                    <option key={alias} value={alias}>{alias}</option>
+                  ))}
+                </select>
+              </div>
             )}
           </div>
         )}
@@ -502,11 +456,9 @@ function SigningOptions({ config, onChange, wasmModule, isMobile = false }: {
       <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Lock className="h-5 w-5 text-primary" />Signing Options</CardTitle></CardHeader>
       <CardContent className="space-y-4">
         <label className="flex items-center gap-4 p-4 rounded-lg border-2 border-border hover:border-primary/50 cursor-pointer transition-all">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={config.useCustomKey}
-            onChange={handleToggleCustomKey}
-            className="h-5 w-5 rounded border-primary text-primary focus:ring-primary"
+            onCheckedChange={handleToggleCustomKey}
           />
           <div className="flex-1">
             <div className="flex items-center gap-2">
@@ -554,43 +506,18 @@ function SigningOptions({ config, onChange, wasmModule, isMobile = false }: {
               </div>
             </div>
             {passwordValid && config.aliases.length > 0 && (
-              <div className="grid gap-4 md:grid-cols-2 animate-in slide-in-from-top-2">
-                <div className="space-y-2">
-                  <Label>Key Alias</Label>
-                  <select
-                    value={config.selectedAlias}
-                    onChange={(e) => onChange({ ...config, selectedAlias: e.target.value })}
-                    className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  >
-                    {config.aliases.map((alias) => (
-                      <option key={alias} value={alias}>{alias}</option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-muted-foreground">Select the key to use for signing</p>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>Key Password</Label>
-                    {config.keyPassword && (
-                      <Badge variant={keyPasswordValid === true ? 'secondary' : keyPasswordValid === false ? 'destructive' : 'outline'}>
-                        {isValidatingKeyPassword ? (
-                          <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Checking...</>
-                        ) : keyPasswordValid ? (
-                          <><Check className="h-3 w-3 mr-1" /> Valid</>
-                        ) : keyPasswordValid === false ? (
-                          <><X className="h-3 w-3 mr-1" /> Invalid</>
-                        ) : null}
-                      </Badge>
-                    )}
-                  </div>
-                  <Input
-                    type="password"
-                    value={config.keyPassword}
-                    onChange={(e) => onChange({ ...config, keyPassword: e.target.value })}
-                    placeholder="Enter key password"
-                  />
-                  <p className="text-xs text-muted-foreground">Usually the same as store password</p>
-                </div>
+              <div className="space-y-2 animate-in slide-in-from-top-2">
+                <Label>Key Alias</Label>
+                <select
+                  value={config.selectedAlias}
+                  onChange={(e) => onChange({ ...config, selectedAlias: e.target.value })}
+                  className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  {config.aliases.map((alias) => (
+                    <option key={alias} value={alias}>{alias}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">Select the key to use for signing</p>
               </div>
             )}
           </div>
@@ -653,7 +580,7 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [manifestValues, setManifestValues] = useState<ManifestValues>({ packageName: '', appName: '', versionCode: '', versionName: '' });
-  const [signingConfig, setSigningConfig] = useState<SigningConfig>({ useCustomKey: false, keystoreData: null, keystorePassword: '', keystoreFileName: '', aliases: [], selectedAlias: '', keyPassword: '' });
+  const [signingConfig, setSigningConfig] = useState<SigningConfig>({ useCustomKey: false, keystoreData: null, keystorePassword: '', keystoreFileName: '', aliases: [], selectedAlias: '' });
 
   useEffect(() => {
     if (apk?.info?.success) {
@@ -680,7 +607,6 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
       if (!signingConfig.keystoreData) { toast.error('Please upload a keystore file'); return; }
       if (!wasmModule.verify_keystore_password(signingConfig.keystoreData, signingConfig.keystorePassword)) { toast.error('Invalid store password'); return; }
       if (!signingConfig.selectedAlias) { toast.error('No key alias selected'); return; }
-      if (!signingConfig.keyPassword) { toast.error('Please enter key password'); return; }
     }
 
     setIsProcessing(true);
@@ -699,7 +625,7 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
           signingConfig.keystoreData,
           signingConfig.keystorePassword,
           signingConfig.selectedAlias || null,
-          signingConfig.keyPassword || null
+          signingConfig.keystorePassword // Key password is same as store password
         );
       } else {
         result = wasmModule.edit_apk(apk.data, packageName, appName, versionCode, versionName);
@@ -735,7 +661,7 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
 
   if (isMobile) {
     return (
-      <div className="flex flex-col gap-6 pb-28">
+      <div className="flex flex-col gap-6 pb-32">
         {apkError && <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{apkError}</AlertDescription></Alert>}
         <section><h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Select APK</h2><FileDropzone onFileSelect={onLoadApk} apk={apk} isLoading={isLoadingApk} onClear={onClearApk} isMobile /></section>
         {apk && (
@@ -744,7 +670,7 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
             <section><h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Signing</h2><SigningOptions config={signingConfig} onChange={setSigningConfig} wasmModule={wasmModule} isMobile /></section>
           </>
         )}
-        <div className="fixed bottom-0 left-0 right-0 p-4 pb-6 bg-background/95 backdrop-blur border-t safe-bottom">
+        <div className="fixed bottom-0 left-0 right-0 p-4 pb-8 bg-background/95 backdrop-blur border-t safe-bottom">
           {isProcessing && <Progress value={progress} className="mb-3 h-1" />}
           <Button onClick={handleProcess} disabled={!canProcess} className="w-full h-12 text-base font-semibold" size="lg">
             {isProcessing ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" />Processing...</> : <><Sparkles className="mr-2 h-5 w-5" />Edit & Sign APK</>}

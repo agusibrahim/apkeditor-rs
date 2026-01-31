@@ -1,5 +1,6 @@
 //! AndroidManifest.xml editing module
 
+use std::collections::HashSet;
 use std::io::Cursor;
 
 use anyhow::{Context, Result};
@@ -31,53 +32,40 @@ pub fn edit_manifest(manifest: &[u8], options: &ManifestEditOptions) -> Result<V
             edit_attr_in_element(chunks, "manifest", "package", pkgname.to_owned(), strings)?
                 .with_context(|| "There is no package name in manifest.")?;
 
+        // First, handle the case where android:authorities shares the same string pool entry
+        // as android:name. In this case, we need to duplicate the string for authorities
+        // so we can replace it without affecting the class name.
+        duplicate_shared_authority_strings(chunks, strings, &old_pkgname);
+
+        // Collect string indices used in android:name attributes (class references)
+        // These should NOT be replaced as they reference actual Java/Kotlin classes
+        let class_name_indices = collect_class_name_indices(chunks, strings);
+
         // Replace package name in string pool.
         //
-        // Strategy: Replace ALL occurrences EXCEPT class names.
-        // Class names are identified by:
-        // - Having a segment after package that starts with uppercase
-        // - AND that segment is CamelCase (not ALL_CAPS like PERMISSION_NAME)
+        // Strategy: Replace ALL occurrences of the old package name EXCEPT
+        // those used in android:name attributes (class references).
         //
-        // Examples that SHOULD be replaced:
-        // - "com.example.app" (exact match)
-        // - "com.example.app.permission.SOMETHING" (permission)
-        // - "com.example.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" (ALL_CAPS = permission)
-        // - "com.example.app.provider" (provider authority)
-        // - "com.example.app.fileprovider" (file provider)
+        // This replaces:
+        // - Provider authorities: "com.example.app.SomeProvider"
+        // - Permissions: "com.example.app.PERMISSION_NAME"
+        // - File providers: "com.example.app.fileprovider"
         //
-        // Examples that should NOT be replaced (class names):
-        // - "com.example.app.MainActivity" (CamelCase class)
-        // - "com.example.app.MyApplication" (CamelCase class)
-        // - "com.example.app.services.MyService" (CamelCase class in subpackage)
-        for string in strings.iter_mut() {
+        // This preserves:
+        // - Class references in android:name: "com.example.app.MainActivity"
+        for (idx, string) in strings.iter_mut().enumerate() {
             // Skip if doesn't contain old package name
             if !string.contains(&old_pkgname) {
                 continue;
             }
 
-            // Exact match - always replace
-            if string == &old_pkgname {
-                *string = pkgname.to_string();
+            // Skip if this index is used for android:name (class reference)
+            if class_name_indices.contains(&idx) {
                 continue;
             }
 
-            // Check suffix after package name
-            let after_pkg = string.strip_prefix(&old_pkgname);
-            if let Some(suffix) = after_pkg {
-                if suffix.starts_with('.') {
-                    // Check if this looks like a class name
-                    // Class names are CamelCase (e.g., "MainActivity", "MyService")
-                    // NOT ALL_CAPS (e.g., "PERMISSION_NAME")
-                    // NOT lowercase (e.g., "provider", "permission")
-                    if is_class_name_suffix(suffix) {
-                        // This is a class name - DON'T replace
-                        continue;
-                    }
-
-                    // Not a class name - replace the package name
-                    *string = string.replace(&old_pkgname, pkgname);
-                }
-            }
+            // Replace all occurrences of old package name
+            *string = string.replace(&old_pkgname, pkgname);
         }
     }
     
@@ -203,69 +191,107 @@ fn edit_attr_string(
     }
 }
 
-fn get_attribute_value(attrs: &[ResXmlAttribute], name: &str, pool: &[String]) -> Option<ResValue> {
-    attrs
-        .iter()
-        .find(|a| attr_has_name(a.name, name, pool))
-        .map(|a| a.typed_value)
-}
-
-/// Check if suffix looks like a class name path.
-///
-/// Class names in Android are CamelCase (e.g., "MainActivity", "MyService").
-/// This function returns true if the suffix contains a CamelCase class name.
-///
-/// Returns true (IS class name) for:
-/// - ".MainActivity"
-/// - ".ui.MainActivity"
-/// - ".services.MyService"
-///
-/// Returns false (NOT class name) for:
-/// - ".PERMISSION_NAME" (ALL_CAPS - permission)
-/// - ".permission.READ_SOMETHING" (permission pattern)
-/// - ".provider" (lowercase - authority)
-/// - ".fileprovider" (lowercase - authority)
-fn is_class_name_suffix(suffix: &str) -> bool {
-    // Skip the leading dot
-    let path = &suffix[1..];
-
-    // Get all segments
-    let segments: Vec<&str> = path.split('.').collect();
-
-    // Check the LAST segment - this is where the class name would be
-    // e.g., "com.example.app.ui.MainActivity" -> check "MainActivity"
-    // e.g., "com.example.app.PERMISSION" -> check "PERMISSION"
-    if let Some(last_segment) = segments.last() {
-        if last_segment.is_empty() {
-            return false;
-        }
-
-        let first_char = last_segment.chars().next().unwrap();
-
-        // If starts with lowercase, definitely not a class name
-        if first_char.is_lowercase() {
-            return false;
-        }
-
-        // If starts with uppercase, check if it's CamelCase or ALL_CAPS
-        // CamelCase: has at least one lowercase letter (e.g., "MainActivity")
-        // ALL_CAPS: only uppercase and underscores (e.g., "PERMISSION_NAME")
-        let has_lowercase = last_segment.chars().any(|c| c.is_lowercase());
-
-        // If it has lowercase letters, it's CamelCase (class name)
-        // If it's ALL_CAPS (no lowercase), it's likely a permission/constant
-        return has_lowercase;
-    }
-
-    false
-}
-
 fn attr_has_name(index: i32, name: &str, string_pool: &[String]) -> bool {
     let index = match usize::try_from(index) {
         Ok(usize) => usize,
         Err(_) => return false,
     };
     string_pool.get(index).is_some_and(|s| s == name)
+}
+
+/// Duplicate strings that are shared between android:name and android:authorities.
+/// This allows us to replace the authorities string without affecting the class name.
+fn duplicate_shared_authority_strings(chunks: &mut [Chunk], pool: &mut Vec<String>, old_pkgname: &str) {
+    // First, collect indices used in android:name for provider elements
+    let mut name_indices: HashSet<usize> = HashSet::new();
+    for chunk in chunks.iter() {
+        if let Chunk::XmlStartElement(_, el, attrs) = chunk {
+            let element_name = pool.get(el.name as usize).map(|s| s.as_str()).unwrap_or("");
+            if element_name == "provider" {
+                for attr in attrs {
+                    if attr_has_name(attr.name, "name", pool) {
+                        if let Some(ResValueType::String) = ResValueType::from_u8(attr.typed_value.data_type) {
+                            let idx = attr.typed_value.data as usize;
+                            if let Some(s) = pool.get(idx) {
+                                if s.contains(old_pkgname) {
+                                    name_indices.insert(idx);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Now find authorities attributes that share the same index and need duplication
+    for chunk in chunks.iter_mut() {
+        if let Chunk::XmlStartElement(_, el, attrs) = chunk {
+            let element_name = pool.get(el.name as usize).map(|s| s.as_str()).unwrap_or("");
+            if element_name == "provider" {
+                for attr in attrs.iter_mut() {
+                    if attr_has_name(attr.name, "authorities", pool) {
+                        if let Some(ResValueType::String) = ResValueType::from_u8(attr.typed_value.data_type) {
+                            let idx = attr.typed_value.data as usize;
+                            // If this index is also used for android:name, duplicate it
+                            if name_indices.contains(&idx) {
+                                if let Some(s) = pool.get(idx) {
+                                    // Create a new string pool entry with the same value
+                                    let new_idx = pool.len() as u32;
+                                    pool.push(s.clone());
+                                    // Update the attribute to use the new index
+                                    attr.typed_value.data = new_idx;
+                                    if attr.raw_value >= 0 {
+                                        attr.raw_value = new_idx as i32;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Collect all string pool indices that are used in android:name attributes
+/// for component declarations (application, activity, service, receiver, provider).
+/// These are class references and should NOT be replaced during package name changes.
+fn collect_class_name_indices(chunks: &[Chunk], pool: &[String]) -> HashSet<usize> {
+    let mut indices = HashSet::new();
+
+    // Component element names that have class references in android:name
+    let component_elements = ["application", "activity", "activity-alias", "service", "receiver", "provider"];
+
+    for chunk in chunks {
+        if let Chunk::XmlStartElement(_, el, attrs) = chunk {
+            // Check if this element is a component declaration
+            let element_name = pool.get(el.name as usize).map(|s| s.as_str()).unwrap_or("");
+            if !component_elements.contains(&element_name) {
+                continue;
+            }
+
+            for attr in attrs {
+                // Check if this attribute is "name"
+                if attr_has_name(attr.name, "name", pool) {
+                    // Get the string value index
+                    let value = &attr.typed_value;
+                    if let Some(ResValueType::String) = ResValueType::from_u8(value.data_type) {
+                        let str_idx = value.data as usize;
+                        // Only add if the string looks like an absolute class name
+                        // (contains dots and doesn't start with a dot)
+                        if let Some(s) = pool.get(str_idx) {
+                            if s.contains('.') && !s.starts_with('.') {
+                                indices.insert(str_idx);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    indices
 }
 
 fn parse_element<'c>(

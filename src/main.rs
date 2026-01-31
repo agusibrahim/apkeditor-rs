@@ -104,11 +104,12 @@ fn main() -> Result<()> {
         {
             let mut file_data = Vec::with_capacity(file.size().try_into()?);
             file.read_to_end(&mut file_data)?;
-            let edited = manifest::edit_manifest(
-                &file_data,
-                options.appname.as_deref(),
-                options.pkgname.as_deref(),
-            )?;
+            let edit_options = manifest::ManifestEditOptions {
+                app_name: options.appname.as_deref(),
+                package_name: options.pkgname.as_deref(),
+                ..Default::default()
+            };
+            let edited = manifest::edit_manifest(&file_data, &edit_options)?;
             output_apk.start_file(
                 file.name(),
                 zip::write::FileOptions::<ExtendedFileOptions>::default(),
@@ -139,8 +140,12 @@ where
     if let Ok(mut file) = input.by_name("AndroidManifest.xml") {
         let mut file_data = Vec::with_capacity(file.size().try_into()?);
         file.read_to_end(&mut file_data)?;
-        let edited =
-            manifest::edit_manifest(&file_data, opts.appname.as_deref(), opts.pkgname.as_deref())?;
+        let edit_options = manifest::ManifestEditOptions {
+            app_name: opts.appname.as_deref(),
+            package_name: opts.pkgname.as_deref(),
+            ..Default::default()
+        };
+        let edited = manifest::edit_manifest(&file_data, &edit_options)?;
         patch_zip.start_file(
             file.name(),
             zip::write::FileOptions::<ExtendedFileOptions>::default(),

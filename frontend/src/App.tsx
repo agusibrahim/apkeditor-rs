@@ -21,6 +21,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useDevice } from '@/hooks/use-device';
 import { useWasm, useApk, type WasmModule, type ApkFile, type ApkInfo } from '@/hooks/use-wasm';
+import { useApkWorker } from '@/hooks/use-apk-worker';
 
 // ============ TYPES ============
 type Theme = 'light' | 'dark' | 'system';
@@ -580,8 +581,7 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
   onClearApk: () => void;
   isMobile?: boolean;
 }) {
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const { isProcessing, progress, processApk } = useApkWorker();
   const [manifestValues, setManifestValues] = useState<ManifestValues>({ packageName: '', appName: '', versionCode: '', versionName: '' });
   const [signingConfig, setSigningConfig] = useState<SigningConfig>({ useCustomKey: false, keystoreData: null, keystorePassword: '', keystoreFileName: '', aliases: [], selectedAlias: '' });
 
@@ -612,32 +612,22 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
       if (!signingConfig.selectedAlias) { toast.error('No key alias selected'); return; }
     }
 
-    setIsProcessing(true);
-    setProgress(10);
-
     try {
-      setProgress(30);
-      let result;
-      if (signingConfig.useCustomKey && signingConfig.keystoreData) {
-        result = wasmModule.edit_apk_with_keystore(
-          apk.data,
-          packageName,
-          appName,
-          versionCode,
-          versionName,
-          signingConfig.keystoreData,
-          signingConfig.keystorePassword,
-          signingConfig.selectedAlias || null,
-          signingConfig.keystorePassword // Key password is same as store password
-        );
-      } else {
-        result = wasmModule.edit_apk(apk.data, packageName, appName, versionCode, versionName);
-      }
+      // Process APK in worker (non-blocking)
+      const modifiedData = await processApk({
+        apkData: apk.data.slice(), // Clone the data since it will be transferred
+        packageName,
+        appName,
+        versionCode,
+        versionName,
+        useCustomKey: signingConfig.useCustomKey,
+        keystoreData: signingConfig.keystoreData?.slice(),
+        keystorePassword: signingConfig.keystorePassword,
+        keyAlias: signingConfig.selectedAlias,
+        keyPassword: signingConfig.keystorePassword, // Key password is same as store password
+      });
 
-      setProgress(80);
-
-      if (result.success) {
-        const modifiedData = result.get_data();
+      if (modifiedData) {
         const blob = new Blob([modifiedData], { type: 'application/vnd.android.package-archive' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -647,16 +637,12 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        setProgress(100);
         toast.success('APK edited successfully!', { description: `Signed with: ${signingConfig.useCustomKey ? `Custom Keystore (${signingConfig.selectedAlias})` : 'Debug Key'}` });
       } else {
-        toast.error('Error processing APK', { description: result.error_message });
+        toast.error('Error processing APK');
       }
     } catch (error) {
       toast.error('Error processing APK', { description: error instanceof Error ? error.message : 'Unknown error' });
-    } finally {
-      setIsProcessing(false);
-      setProgress(0);
     }
   };
 

@@ -1,27 +1,33 @@
-# rsapkeditor
+# APK Editor
 
-A pure **Rust** + **WebAssembly** library and web interface for editing Android APK files directly in the browser.
+A pure **Rust** + **WebAssembly** APK editor with a modern React frontend for editing Android APK files directly in the browser.
 
 🔗 **Live Demo**: [apkeditor-rs](https://agusibrahim.github.io/apkeditor-rs/)
 
 ## Features
 
 - **100% Offline**: All processing happens in your browser. No APKs are uploaded to any server.
+- **PWA Support**: Install as a Progressive Web App for offline access.
+- **Non-blocking Processing**: Web Worker ensures smooth UI even for large APKs (80MB+).
 - **Manifest Editing**:
-  - **Package Name**: Globally replaces the package name in the AndroidManifest string pool (fixes `INSTALL_FAILED_DUPLICATE_PERMISSION`).
+  - **Package Name**: Smart replacement that preserves class names while updating package references and permissions.
   - **App Name**: Renames the application label.
   - **Version Info**: Updates `versionCode` and `versionName`.
 - **Advanced Signing Options**:
-  - **Debug Key**: Default signing with built-in debug keystore (v2 scheme).
-  - **Custom Keystore**: Support for `.p12` / `.pfx` files with **real-time password validation**.
-  - **PEM Signing**: Support for raw PEM files (containing both Private Key and Certificate) without password.
+  - **Debug Key**: Default signing with built-in debug keystore (APK Signature Scheme v2).
+  - **Custom Keystore**: Support for `.keystore`, `.jks`, `.p12`, `.pfx` files with real-time password validation.
 - **Icon Preview**:
   - Displays the app icon even from obfuscated APKs.
-  - Smart detection (Launcher -> Mipmap -> File Size heuristics).
+  - Smart detection prioritizing higher density variants.
 
-## Credits
+## Tech Stack
 
-- **p12-keystore**: This project includes a modified version of the [p12-keystore](https://crates.io/crates/p12-keystore) crate (located in `p12-keystore-main`) to support pure Rust PKCS#12 parsing in a WASM environment.
+- **Backend**: Rust compiled to WebAssembly
+  - `apk`, `zip`, `rsa`, `sha2`, `jks` crates
+  - Binary editing of `AndroidManifest.xml`
+- **Frontend**: React + TypeScript + Vite
+  - Tailwind CSS + shadcn/ui components
+  - Responsive design (mobile & desktop)
 
 ## Build
 
@@ -30,26 +36,39 @@ This project uses `make` for build automation.
 ### Prerequisites
 
 - [Rust](https://www.rust-lang.org/tools/install)
+- [Bun](https://bun.sh/) (or npm/pnpm)
 - `wasm-pack`: `cargo install wasm-pack`
 
 ### Commands
 
 ```bash
-# Build WASM and prepare dist folder
+# Build WASM and frontend (production)
 make
+
+# Development mode with hot reload
+make dev
 
 # Clean build artifacts
 make clean
 ```
 
-The output will be in the `dist/` folder, ready for deployment.
+The output will be in `frontend/dist/`, ready for deployment.
 
-## Technical Details
+## Project Structure
 
-- **Core**: Built with Rust using `apk`, `zip`, `rsa`, `sha2` crates.
-- **WASM**: Exposed via `wasm-bindgen`.
-- **Manifest**: Uses direct binary editing of the `AndroidManifest.xml` via `apk` crate structures.
-- **Frontend**: Vanilla HTML/JS/CSS (no bloated frameworks).
+```
+├── src/                # Rust source code
+│   ├── lib.rs          # WASM bindings
+│   ├── manifest.rs     # AndroidManifest.xml editing
+│   └── sign.rs         # APK signing logic
+├── frontend/           # React frontend
+│   ├── src/
+│   │   ├── App.tsx     # Main application
+│   │   ├── hooks/      # Custom React hooks
+│   │   └── workers/    # Web Workers for WASM processing
+│   └── public/         # Static assets
+└── Makefile            # Build automation
+```
 
 ## License
 

@@ -14,6 +14,9 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
   },
+  worker: {
+    format: 'es',
+  },
   server: {
     port: 5173,
     open: true,

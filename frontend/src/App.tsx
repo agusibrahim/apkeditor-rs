@@ -9,7 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Upload, FileArchive, X, Loader2, Pencil, Package, Type, Hash, Tag,
-  Lock, Key, Check, Sparkles, AlertCircle, Smartphone, Moon, Sun, Monitor, Github, Shield, Zap
+  Lock, Key, Check, Sparkles, AlertCircle, Smartphone, Moon, Sun, Monitor, Github, Shield, Zap, Image
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -40,6 +40,12 @@ interface SigningConfig {
   keystoreFileName: string;
   aliases: string[];
   selectedAlias: string;
+}
+
+interface IconConfig {
+  data: Uint8Array | null;
+  fileName: string;
+  url: string | null;
 }
 
 // ============ UTILITIES ============
@@ -571,6 +577,167 @@ function ErrorScreen({ error }: { error: string }) {
   );
 }
 
+// ============ ICON EDITOR ============
+function IconEditor({ icon, onChange, isMobile = false }: {
+  icon: IconConfig;
+  onChange: (icon: IconConfig) => void;
+  isMobile?: boolean;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file && file.type === 'image/png') {
+      processIconFile(file);
+    }
+  }, []);
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type === 'image/png') {
+      processIconFile(file);
+    }
+  }, []);
+
+  const processIconFile = async (file: File) => {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const data = new Uint8Array(arrayBuffer);
+      const blob = new Blob([data], { type: 'image/png' });
+      const url = URL.createObjectURL(blob);
+      onChange({ data, fileName: file.name, url });
+    } catch (error) {
+      console.error('Error processing icon:', error);
+    }
+  };
+
+  const handleClear = useCallback(() => {
+    if (icon.url) {
+      URL.revokeObjectURL(icon.url);
+    }
+    onChange({ data: null, fileName: '', url: null });
+  }, [icon.url, onChange]);
+
+  if (isMobile) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-sm">App Icon</Label>
+          {icon.data && (
+            <Button variant="ghost" size="sm" onClick={handleClear} className="h-7 text-xs text-destructive">
+              <X className="h-3 w-3 mr-1" />Clear
+            </Button>
+          )}
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
+        <div
+          className={cn(
+            "border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-all",
+            isDragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+          )}
+          onClick={() => fileInputRef.current?.click()}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {icon.url ? (
+            <div className="space-y-2">
+              <img src={icon.url} alt="New icon" className="w-16 h-16 mx-auto rounded-xl object-cover shadow-lg" />
+              <p className="text-xs text-muted-foreground">{icon.fileName}</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Image className="h-10 w-10 mx-auto text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Upload new icon</p>
+                <p className="text-xs text-muted-foreground">PNG format recommended</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Image className="h-5 w-5 text-primary" />
+          Replace App Icon
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
+        <div
+          className={cn(
+            "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all",
+            isDragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-muted/30"
+          )}
+          onClick={() => fileInputRef.current?.click()}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {icon.url ? (
+            <div className="flex items-center justify-center gap-6">
+              <div className="flex items-center gap-4">
+                <img src={icon.url} alt="New icon" className="w-20 h-20 rounded-2xl object-cover shadow-lg border border-border" />
+                <div className="text-left">
+                  <p className="font-medium">{icon.fileName}</p>
+                  <p className="text-sm text-muted-foreground">Ready to replace all icon densities</p>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleClear(); }}>
+                <X className="h-4 w-4 mr-2" />Clear
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <Image className="h-12 w-12 mx-auto text-muted-foreground" />
+              <div>
+                <p className="font-medium">Drop your icon here or click to browse</p>
+                <p className="text-sm text-muted-foreground mt-1">PNG format (will be used for all density variants)</p>
+              </div>
+            </div>
+          )}
+        </div>
+        {icon.url && (
+          <div className="flex items-start gap-2 p-3 bg-muted/50 rounded-lg text-sm text-muted-foreground">
+            <Check className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+            <span>Icon will replace all launcher icon density variants in the APK</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ============ MAIN APK EDITOR ============
 function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onClearApk, isMobile = false }: {
   wasmModule: WasmModule | null;
@@ -584,6 +751,7 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
   const { isProcessing, progress, processApk } = useApkWorker();
   const [manifestValues, setManifestValues] = useState<ManifestValues>({ packageName: '', appName: '', versionCode: '', versionName: '' });
   const [signingConfig, setSigningConfig] = useState<SigningConfig>({ useCustomKey: false, keystoreData: null, keystorePassword: '', keystoreFileName: '', aliases: [], selectedAlias: '' });
+  const [iconConfig, setIconConfig] = useState<IconConfig>({ data: null, fileName: '', url: null });
 
   useEffect(() => {
     if (apk?.info?.success) {
@@ -625,6 +793,7 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
         keystorePassword: signingConfig.keystorePassword,
         keyAlias: signingConfig.selectedAlias,
         keyPassword: signingConfig.keystorePassword, // Key password is same as store password
+        iconData: iconConfig.data?.slice(),
       });
 
       if (modifiedData) {
@@ -655,6 +824,7 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
         <section><h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Select APK</h2><FileDropzone onFileSelect={onLoadApk} apk={apk} isLoading={isLoadingApk} onClear={onClearApk} isMobile /></section>
         {apk && (
           <>
+            <section><h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">App Icon</h2><IconEditor icon={iconConfig} onChange={setIconConfig} isMobile /></section>
             <section><h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Edit Manifest</h2><ManifestEditor values={manifestValues} onChange={setManifestValues} originalInfo={apk.info} wasmModule={wasmModule} isMobile /></section>
             <section><h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Signing</h2><SigningOptions config={signingConfig} onChange={setSigningConfig} wasmModule={wasmModule} isMobile /></section>
           </>
@@ -675,6 +845,7 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
       <FileDropzone onFileSelect={onLoadApk} apk={apk} isLoading={isLoadingApk} onClear={onClearApk} />
       {apk && (
         <>
+          <IconEditor icon={iconConfig} onChange={setIconConfig} />
           <ManifestEditor values={manifestValues} onChange={setManifestValues} originalInfo={apk.info} wasmModule={wasmModule} />
           <SigningOptions config={signingConfig} onChange={setSigningConfig} wasmModule={wasmModule} />
           <div className="space-y-4">

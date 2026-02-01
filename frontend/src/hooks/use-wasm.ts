@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect } from "react";
 import init, {
   edit_apk,
   edit_apk_with_keystore,
@@ -12,8 +12,8 @@ import init, {
   get_apk_icon as wasmGetApkIcon,
   type ApkInfo as WasmApkInfo,
   type ApkEditResult,
-} from '@/wasm/rsapkeditor.js';
-import wasmUrl from '@/wasm/rsapkeditor_bg.wasm?url';
+} from "@/wasm/rsapkeditor.js";
+import wasmUrl from "@/wasm/rsapkeditor_bg.wasm?url";
 
 export interface ApkInfo {
   success: boolean;
@@ -31,10 +31,33 @@ export interface EditResult {
 }
 
 export interface WasmModule {
-  edit_apk: (data: Uint8Array, packageName: string | null, appName: string | null, versionCode: number | null, versionName: string | null) => EditResult;
-  edit_apk_with_keystore: (data: Uint8Array, packageName: string | null, appName: string | null, versionCode: number | null, versionName: string | null, keystoreData: Uint8Array, storePassword: string, keyAlias: string | null, keyPassword: string | null) => EditResult;
+  edit_apk: (
+    data: Uint8Array,
+    packageName: string | null,
+    appName: string | null,
+    versionCode: number | null,
+    versionName: string | null,
+    iconData: Uint8Array | null,
+  ) => EditResult;
+  edit_apk_with_keystore: (
+    data: Uint8Array,
+    packageName: string | null,
+    appName: string | null,
+    versionCode: number | null,
+    versionName: string | null,
+    keystoreData: Uint8Array,
+    storePassword: string,
+    keyAlias: string | null,
+    keyPassword: string | null,
+    iconData: Uint8Array | null,
+  ) => EditResult;
   verify_keystore_password: (data: Uint8Array, password: string) => boolean;
-  verify_key_password: (data: Uint8Array, storePassword: string, alias: string, keyPassword: string) => boolean;
+  verify_key_password: (
+    data: Uint8Array,
+    storePassword: string,
+    alias: string,
+    keyPassword: string,
+  ) => boolean;
   get_keystore_aliases: (data: Uint8Array, password: string) => string[];
   validate_package_name: (name: string) => boolean;
   get_version: () => string;
@@ -82,17 +105,54 @@ async function loadWasmModule(): Promise<WasmModule> {
 
   // Create a wrapper module that matches the expected interface
   const module: WasmModule = {
-    edit_apk: (data, packageName, appName, versionCode, versionName) => {
-      const result = edit_apk(data, packageName, appName, versionCode, versionName);
+    edit_apk: (
+      data,
+      packageName,
+      appName,
+      versionCode,
+      versionName,
+      iconData,
+    ) => {
+      const result = edit_apk(
+        data,
+        packageName,
+        appName,
+        versionCode,
+        versionName,
+        iconData,
+      );
       return wrapEditResult(result);
     },
-    edit_apk_with_keystore: (data, packageName, appName, versionCode, versionName, keystoreData, storePassword, keyAlias, keyPassword) => {
-      const result = edit_apk_with_keystore(data, packageName, appName, versionCode, versionName, keystoreData, storePassword, keyAlias, keyPassword);
+    edit_apk_with_keystore: (
+      data,
+      packageName,
+      appName,
+      versionCode,
+      versionName,
+      keystoreData,
+      storePassword,
+      keyAlias,
+      keyPassword,
+      iconData,
+    ) => {
+      const result = edit_apk_with_keystore(
+        data,
+        packageName,
+        appName,
+        versionCode,
+        versionName,
+        keystoreData,
+        storePassword,
+        keyAlias,
+        keyPassword,
+        iconData,
+      );
       return wrapEditResult(result);
     },
     verify_keystore_password,
     verify_key_password,
-    get_keystore_aliases: (data, password) => Array.from(get_keystore_aliases(data, password)),
+    get_keystore_aliases: (data, password) =>
+      Array.from(get_keystore_aliases(data, password)),
     validate_package_name,
     get_version,
     init_panic_hook,
@@ -134,8 +194,8 @@ export function useWasm(): UseWasmReturn {
         setIsLoading(false);
       })
       .catch((err) => {
-        console.error('WASM init error:', err);
-        setError(err.message || 'Failed to load WASM module');
+        console.error("WASM init error:", err);
+        setError(err.message || "Failed to load WASM module");
         setIsLoading(false);
       });
   }, []);
@@ -173,54 +233,57 @@ export function useApk(wasmModule: WasmModule | null): UseApkReturn {
     setError(null);
   }, []);
 
-  const loadApk = useCallback(async (file: File) => {
-    if (!wasmModule) {
-      setError('WASM module not loaded');
-      return;
-    }
-
-    if (!file.name.toLowerCase().endsWith('.apk')) {
-      setError('Please select a valid APK file');
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const data = new Uint8Array(arrayBuffer);
-
-      let info: ApkInfo | null = null;
-      let iconUrl: string | null = null;
-
-      try {
-        info = wasmModule.get_apk_info(data);
-      } catch (e) {
-        console.error('Error reading APK info:', e);
+  const loadApk = useCallback(
+    async (file: File) => {
+      if (!wasmModule) {
+        setError("WASM module not loaded");
+        return;
       }
 
+      if (!file.name.toLowerCase().endsWith(".apk")) {
+        setError("Please select a valid APK file");
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+
       try {
-        const iconData = wasmModule.get_apk_icon(data);
-        if (iconData.length > 0) {
-          if (iconUrlRef.current) {
-            URL.revokeObjectURL(iconUrlRef.current);
-          }
-          const blob = new Blob([iconData], { type: 'image/png' });
-          iconUrl = URL.createObjectURL(blob);
-          iconUrlRef.current = iconUrl;
+        const arrayBuffer = await file.arrayBuffer();
+        const data = new Uint8Array(arrayBuffer);
+
+        let info: ApkInfo | null = null;
+        let iconUrl: string | null = null;
+
+        try {
+          info = wasmModule.get_apk_info(data);
+        } catch (e) {
+          console.error("Error reading APK info:", e);
         }
-      } catch (e) {
-        console.error('Error reading APK icon:', e);
-      }
 
-      setApk({ file, data, info, iconUrl });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load APK');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [wasmModule]);
+        try {
+          const iconData = wasmModule.get_apk_icon(data);
+          if (iconData.length > 0) {
+            if (iconUrlRef.current) {
+              URL.revokeObjectURL(iconUrlRef.current);
+            }
+            const blob = new Blob([iconData], { type: "image/png" });
+            iconUrl = URL.createObjectURL(blob);
+            iconUrlRef.current = iconUrl;
+          }
+        } catch (e) {
+          console.error("Error reading APK icon:", e);
+        }
+
+        setApk({ file, data, info, iconUrl });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load APK");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [wasmModule],
+  );
 
   return { apk, isLoading, error, loadApk, clearApk };
 }

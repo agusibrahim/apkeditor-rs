@@ -2,6 +2,7 @@
 //! 
 //! This module provides APK editing and signing capabilities for WebAssembly.
 
+pub mod icon;
 pub mod manifest;
 pub mod sign;
 
@@ -91,6 +92,7 @@ pub fn edit_apk_bytes(
     version_code: Option<u32>,
     version_name: Option<&str>,
     custom_pem: Option<&str>,
+    icon_data: Option<&[u8]>,
 ) -> Result<Vec<u8>> {
     // Validate package name if provided
     if let Some(pkg) = package_name {
@@ -102,9 +104,30 @@ pub fn edit_apk_bytes(
     
     let output = Vec::new();
     let mut output_apk = ZipWriter::new(Cursor::new(output));
-    
-    let needs_manifest_edit = package_name.is_some() || app_name.is_some() 
+
+    let needs_manifest_edit = package_name.is_some() || app_name.is_some()
         || version_code.is_some() || version_name.is_some();
+
+    // Find icon paths to replace if icon_data is provided
+    let icon_paths_to_replace = if icon_data.is_some() {
+        match icon::find_icon_paths(apk_data) {
+            Ok(paths) => {
+                // Validate the icon is a PNG
+                if let Err(e) = icon::validate_png(icon_data.unwrap()) {
+                    eprintln!("Icon validation error: {}", e);
+                    Vec::new()
+                } else {
+                    paths.iter().map(|info| info.path.clone()).collect::<Vec<_>>()
+                }
+            }
+            Err(e) => {
+                eprintln!("Error finding icon paths: {}", e);
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
+    };
     
     // Process all files - remove v1 signatures and edit manifest if needed
     for i in 0..input_apk.len() {
@@ -135,6 +158,22 @@ pub fn edit_apk_bytes(
             continue;
         }
         
+        // Check if this is an icon file that should be replaced
+        let is_icon_to_replace = !icon_paths_to_replace.is_empty()
+            && icon_paths_to_replace.contains(&file.name().to_string());
+
+        if is_icon_to_replace {
+            // Replace with the new icon data
+            if let Some(new_icon) = icon_data {
+                output_apk.start_file(
+                    file.name(),
+                    zip::write::FileOptions::<ExtendedFileOptions>::default(),
+                )?;
+                output_apk.write_all(new_icon)?;
+            }
+            continue;
+        }
+
         // Edit AndroidManifest.xml if any edit options are provided
         if file.name() == "AndroidManifest.xml" && needs_manifest_edit {
             let mut file_data = Vec::with_capacity(file.size().try_into()?);
@@ -275,14 +314,17 @@ pub fn edit_apk(
     app_name: Option<String>,
     version_code: Option<u32>,
     version_name: Option<String>,
+    icon_data: Option<Box<[u8]>>,
 ) -> ApkEditResult {
+    let icon_bytes = icon_data.as_deref();
     match edit_apk_bytes(
-        apk_data, 
-        package_name.as_deref(), 
+        apk_data,
+        package_name.as_deref(),
         app_name.as_deref(),
         version_code,
         version_name.as_deref(),
         None, // Default debug key
+        icon_bytes,
     ) {
         Ok(data) => ApkEditResult {
             data,
@@ -310,6 +352,7 @@ pub fn edit_apk_with_keystore(
     store_password: &str,
     key_alias: Option<String>,
     key_password: Option<String>,
+    icon_data: Option<Box<[u8]>>,
 ) -> ApkEditResult {
     // Convert keystore (JKS or P12) to PEM
     let pem_result = convert_keystore_to_pem(
@@ -328,6 +371,7 @@ pub fn edit_apk_with_keystore(
     }
     let pem = pem_result.unwrap();
 
+    let icon_bytes = icon_data.as_deref();
     match edit_apk_bytes(
         apk_data,
         package_name.as_deref(),
@@ -335,6 +379,7 @@ pub fn edit_apk_with_keystore(
         version_code,
         version_name.as_deref(),
         Some(&pem),
+        icon_bytes,
     ) {
         Ok(data) => ApkEditResult {
             data,

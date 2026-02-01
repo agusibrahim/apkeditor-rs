@@ -19,6 +19,7 @@ export interface EditApkPayload {
   keystorePassword?: string;
   keyAlias?: string;
   keyPassword?: string;
+  iconData?: Uint8Array;
 }
 
 export interface WorkerResponse {
@@ -98,6 +99,7 @@ async function processApk(id: string, payload: EditApkPayload) {
     keystorePassword,
     keyAlias,
     keyPassword,
+    iconData,
   } = payload;
 
   // Send progress update - starting
@@ -120,10 +122,11 @@ async function processApk(id: string, payload: EditApkPayload) {
       keystoreData,
       keystorePassword || '',
       keyAlias || null,
-      keyPassword || null
+      keyPassword || null,
+      iconData || null
     );
   } else {
-    result = edit_apk(apkData, packageName, appName, versionCode, versionName);
+    result = edit_apk(apkData, packageName, appName, versionCode, versionName, iconData || null);
   }
 
   // Send progress update - almost done

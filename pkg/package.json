@@ -1,0 +1,38 @@
+{
+  "name": "rsapkeditor",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "APK Editor WebAssembly - Edit Android APK files directly in the browser",
+  "author": "agusibrahim",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agusibrahim/apkeditor-rs"
+  },
+  "keywords": [
+    "apk",
+    "editor",
+    "wasm",
+    "webassembly",
+    "android",
+    "rust",
+    "signing"
+  ],
+  "files": [
+    "rsapkeditor_bg.wasm",
+    "rsapkeditor.js",
+    "rsapkeditor.d.ts",
+    "rsapkeditor_bg.wasm.d.ts"
+  ],
+  "main": "rsapkeditor.js",
+  "types": "rsapkeditor.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ],
+  "exports": {
+    ".": {
+      "import": "./rsapkeditor.js",
+      "types": "./rsapkeditor.d.ts"
+    }
+  }
+}

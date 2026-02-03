@@ -1,0 +1,31 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const __wbg_apkeditresult_free: (a: number, b: number) => void;
+export const apkeditresult_success: (a: number) => number;
+export const apkeditresult_error_message: (a: number) => [number, number];
+export const apkeditresult_get_data: (a: number) => any;
+export const get_keystore_aliases: (a: number, b: number, c: number, d: number) => any;
+export const init_panic_hook: () => void;
+export const edit_apk: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
+export const edit_apk_with_keystore: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number) => number;
+export const verify_key_password: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
+export const verify_keystore_password: (a: number, b: number, c: number, d: number) => number;
+export const validate_package_name: (a: number, b: number) => number;
+export const get_version: () => [number, number];
+export const __wbg_apkinfo_free: (a: number, b: number) => void;
+export const apkinfo_package_name: (a: number) => [number, number];
+export const apkinfo_app_name: (a: number) => [number, number];
+export const apkinfo_version_code: (a: number) => number;
+export const apkinfo_version_name: (a: number) => [number, number];
+export const apkinfo_success: (a: number) => number;
+export const apkinfo_error_message: (a: number) => [number, number];
+export const get_apk_info: (a: number, b: number) => number;
+export const get_apk_icon: (a: number, b: number) => any;
+export const list_apk_files: (a: number, b: number) => [number, number];
+export const dump_manifest: (a: number, b: number) => [number, number];
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_externrefs: WebAssembly.Table;
+export const __wbindgen_start: () => void;

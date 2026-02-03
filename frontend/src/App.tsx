@@ -9,7 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Upload, FileArchive, X, Loader2, Pencil, Package, Type, Hash, Tag,
-  Lock, Key, Check, Sparkles, AlertCircle, Smartphone, Moon, Sun, Monitor, Github, Shield, Zap, Image
+  Lock, Key, Check, Sparkles, AlertCircle, Smartphone, Moon, Sun, Monitor, Github, Shield, Zap, Image, ArrowRight
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -249,13 +249,18 @@ function FileDropzone({ onFileSelect, apk, isLoading, onClear, isMobile = false 
 }
 
 // ============ MANIFEST EDITOR ============
-function ManifestEditor({ values, onChange, originalInfo, wasmModule, isMobile = false }: {
+interface ManifestEditorProps {
   values: ManifestValues;
   onChange: (values: ManifestValues) => void;
   originalInfo: ApkInfo | null;
   wasmModule: WasmModule | null;
+  originalIconUrl: string | null;
+  iconConfig: IconConfig;
+  onIconChange: (icon: IconConfig) => void;
   isMobile?: boolean;
-}) {
+}
+
+function ManifestEditor({ values, onChange, originalInfo, wasmModule, originalIconUrl, iconConfig, onIconChange, isMobile = false }: ManifestEditorProps) {
   const isPackageValid = !values.packageName || (wasmModule?.validate_package_name(values.packageName) ?? true);
   const handleChange = (field: keyof ManifestValues, value: string) => onChange({ ...values, [field]: value });
 
@@ -269,6 +274,9 @@ function ManifestEditor({ values, onChange, originalInfo, wasmModule, isMobile =
   if (isMobile) {
     return (
       <div className="space-y-4">
+        {/* Icon Editor Section */}
+        <InlineIconEditor originalIconUrl={originalIconUrl} icon={iconConfig} onChange={onIconChange} isMobile />
+        {/* Form Fields */}
         {fields.map((field) => (
           <div key={field.id} className="space-y-2">
             <div className="flex items-center justify-between">
@@ -287,6 +295,10 @@ function ManifestEditor({ values, onChange, originalInfo, wasmModule, isMobile =
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Pencil className="h-5 w-5 text-primary" />Edit Manifest Properties</CardTitle></CardHeader>
       <CardContent className="space-y-6">
+        {/* Icon Editor Section */}
+        <InlineIconEditor originalIconUrl={originalIconUrl} icon={iconConfig} onChange={onIconChange} />
+
+        {/* Form Fields */}
         <div className="grid gap-6 md:grid-cols-2">
           {fields.slice(0, 2).map((field) => (
             <div key={field.id} className="space-y-2">
@@ -577,37 +589,22 @@ function ErrorScreen({ error }: { error: string }) {
   );
 }
 
-// ============ ICON EDITOR ============
-function IconEditor({ icon, onChange, isMobile = false }: {
+// ============ ICON EDITOR (INLINE) ============
+interface IconEditorProps {
+  originalIconUrl: string | null;
   icon: IconConfig;
   onChange: (icon: IconConfig) => void;
   isMobile?: boolean;
-}) {
+}
+
+function InlineIconEditor({ originalIconUrl, icon, onChange, isMobile = false }: IconEditorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file && file.type === 'image/png') {
-      processIconFile(file);
-    }
-  }, []);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && file.type === 'image/png') {
+    if (!file) return;
+    // Accept PNG and other image formats
+    if (file.type.startsWith('image/')) {
       processIconFile(file);
     }
   }, []);
@@ -616,8 +613,12 @@ function IconEditor({ icon, onChange, isMobile = false }: {
     try {
       const arrayBuffer = await file.arrayBuffer();
       const data = new Uint8Array(arrayBuffer);
-      const blob = new Blob([data], { type: 'image/png' });
+      const blob = new Blob([data], { type: file.type });
       const url = URL.createObjectURL(blob);
+      // Revoke old URL if exists
+      if (icon.url && icon.url !== url) {
+        URL.revokeObjectURL(icon.url);
+      }
       onChange({ data, fileName: file.name, url });
     } catch (error) {
       console.error('Error processing icon:', error);
@@ -628,118 +629,129 @@ function IconEditor({ icon, onChange, isMobile = false }: {
     if (icon.url) {
       URL.revokeObjectURL(icon.url);
     }
+    // Reset input value so same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
     onChange({ data: null, fileName: '', url: null });
   }, [icon.url, onChange]);
 
   if (isMobile) {
     return (
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <Label className="text-sm">App Icon</Label>
-          {icon.data && (
-            <Button variant="ghost" size="sm" onClick={handleClear} className="h-7 text-xs text-destructive">
-              <X className="h-3 w-3 mr-1" />Clear
+      <div className="space-y-3 p-4 bg-muted/30 rounded-lg">
+        <div className="flex items-center gap-2">
+          <Image className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">App Icon</span>
+        </div>
+        <div className="flex items-center gap-3">
+          {/* Old Icon */}
+          <div className="flex flex-col items-center gap-1">
+            <div className="relative">
+              {originalIconUrl ? (
+                <img src={originalIconUrl} alt="Original" className="w-14 h-14 rounded-lg object-cover shadow-md" />
+              ) : (
+                <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center">
+                  <FileArchive className="h-6 w-6 text-muted-foreground" />
+                </div>
+              )}
+              <span className="text-xs text-muted-foreground absolute -bottom-5 left-1/2 -translate-x-1/2">Current</span>
+            </div>
+          </div>
+
+          {/* Arrow */}
+          <ArrowRight className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+
+          {/* New Icon / Choose Button */}
+          {icon.url ? (
+            <div className="flex flex-col items-center gap-1 flex-1">
+              <div className="flex items-center gap-2">
+                <img src={icon.url} alt="New" className="w-14 h-14 rounded-lg object-cover shadow-md" />
+                <Button variant="ghost" size="icon" onClick={handleClear} className="h-8 w-8 flex-shrink-0">
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <span className="text-xs text-muted-foreground">New Icon</span>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex-1"
+            >
+              Choose Icon
             </Button>
           )}
         </div>
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/png"
+          accept="image/*"
           onChange={handleFileSelect}
           className="hidden"
         />
-        <div
-          className={cn(
-            "border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-all",
-            isDragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-          )}
-          onClick={() => fileInputRef.current?.click()}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          {icon.url ? (
-            <div className="space-y-2">
-              <img src={icon.url} alt="New icon" className="w-16 h-16 mx-auto rounded-xl object-cover shadow-lg" />
-              <p className="text-xs text-muted-foreground">{icon.fileName}</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Image className="h-10 w-10 mx-auto text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">Upload new icon</p>
-                <p className="text-xs text-muted-foreground">PNG format recommended</p>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <Image className="h-5 w-5 text-primary" />
-          Replace App Icon
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/png"
-          onChange={handleFileSelect}
-          className="hidden"
-        />
-        <div
-          className={cn(
-            "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all",
-            isDragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-muted/30"
-          )}
-          onClick={() => fileInputRef.current?.click()}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          {icon.url ? (
-            <div className="flex items-center justify-center gap-6">
-              <div className="flex items-center gap-4">
-                <img src={icon.url} alt="New icon" className="w-20 h-20 rounded-2xl object-cover shadow-lg border border-border" />
-                <div className="text-left">
-                  <p className="font-medium">{icon.fileName}</p>
-                  <p className="text-sm text-muted-foreground">Ready to replace all icon densities</p>
-                </div>
-              </div>
-              <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleClear(); }}>
-                <X className="h-4 w-4 mr-2" />Clear
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <Image className="h-12 w-12 mx-auto text-muted-foreground" />
-              <div>
-                <p className="font-medium">Drop your icon here or click to browse</p>
-                <p className="text-sm text-muted-foreground mt-1">PNG format (will be used for all density variants)</p>
-              </div>
-            </div>
-          )}
-        </div>
-        {icon.url && (
-          <div className="flex items-start gap-2 p-3 bg-muted/50 rounded-lg text-sm text-muted-foreground">
-            <Check className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
-            <span>Icon will replace all launcher icon density variants in the APK</span>
+    <div className="flex items-center gap-4 p-4 bg-muted/30 rounded-lg">
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <Image className="h-5 w-5 text-muted-foreground" />
+        <span className="font-medium">App Icon</span>
+      </div>
+
+      <div className="h-8 w-px bg-border flex-shrink-0" />
+
+      {/* Old Icon */}
+      <div className="flex flex-col items-center gap-1">
+        {originalIconUrl ? (
+          <img src={originalIconUrl} alt="Original" className="w-12 h-12 rounded-lg object-cover shadow-md" />
+        ) : (
+          <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
+            <FileArchive className="h-6 w-6 text-muted-foreground" />
           </div>
         )}
-      </CardContent>
-    </Card>
+        <span className="text-xs text-muted-foreground">Current</span>
+      </div>
+
+      {/* Arrow */}
+      <ArrowRight className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+
+      {/* New Icon / Choose Button */}
+      {icon.url ? (
+        <div className="flex items-center gap-3">
+          <div className="flex flex-col items-center gap-1">
+            <img src={icon.url} alt="New" className="w-12 h-12 rounded-lg object-cover shadow-md" />
+            <span className="text-xs text-muted-foreground">New Icon</span>
+          </div>
+          <Button variant="ghost" size="icon" onClick={handleClear} className="h-8 w-8">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      ) : (
+        <Button
+          variant="outline"
+          onClick={() => fileInputRef.current?.click()}
+          className="flex-shrink-0"
+        >
+          Choose Icon
+        </Button>
+      )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+    </div>
   );
 }
 
 // ============ MAIN APK EDITOR ============
-function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onClearApk, isMobile = false }: {
+interface ApkEditorCoreProps {
   wasmModule: WasmModule | null;
   apk: ApkFile | null;
   isLoadingApk: boolean;
@@ -747,7 +759,9 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
   onLoadApk: (file: File) => void;
   onClearApk: () => void;
   isMobile?: boolean;
-}) {
+}
+
+function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onClearApk, isMobile = false }: ApkEditorCoreProps) {
   const { isProcessing, progress, processApk } = useApkWorker();
   const [manifestValues, setManifestValues] = useState<ManifestValues>({ packageName: '', appName: '', versionCode: '', versionName: '' });
   const [signingConfig, setSigningConfig] = useState<SigningConfig>({ useCustomKey: false, keystoreData: null, keystorePassword: '', keystoreFileName: '', aliases: [], selectedAlias: '' });
@@ -824,8 +838,7 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
         <section><h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Select APK</h2><FileDropzone onFileSelect={onLoadApk} apk={apk} isLoading={isLoadingApk} onClear={onClearApk} isMobile /></section>
         {apk && (
           <>
-            <section><h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">App Icon</h2><IconEditor icon={iconConfig} onChange={setIconConfig} isMobile /></section>
-            <section><h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Edit Manifest</h2><ManifestEditor values={manifestValues} onChange={setManifestValues} originalInfo={apk.info} wasmModule={wasmModule} isMobile /></section>
+            <section><h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Edit Manifest</h2><ManifestEditor values={manifestValues} onChange={setManifestValues} originalInfo={apk.info} wasmModule={wasmModule} originalIconUrl={apk.iconUrl} iconConfig={iconConfig} onIconChange={setIconConfig} isMobile /></section>
             <section><h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Signing</h2><SigningOptions config={signingConfig} onChange={setSigningConfig} wasmModule={wasmModule} isMobile /></section>
           </>
         )}
@@ -845,8 +858,7 @@ function ApkEditorCore({ wasmModule, apk, isLoadingApk, apkError, onLoadApk, onC
       <FileDropzone onFileSelect={onLoadApk} apk={apk} isLoading={isLoadingApk} onClear={onClearApk} />
       {apk && (
         <>
-          <IconEditor icon={iconConfig} onChange={setIconConfig} />
-          <ManifestEditor values={manifestValues} onChange={setManifestValues} originalInfo={apk.info} wasmModule={wasmModule} />
+          <ManifestEditor values={manifestValues} onChange={setManifestValues} originalInfo={apk.info} wasmModule={wasmModule} originalIconUrl={apk.iconUrl} iconConfig={iconConfig} onIconChange={setIconConfig} />
           <SigningOptions config={signingConfig} onChange={setSigningConfig} wasmModule={wasmModule} />
           <div className="space-y-4">
             {isProcessing && <Progress value={progress} className="h-2" />}
